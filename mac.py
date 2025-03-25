@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from tkinter import messagebox
 import re
@@ -24,6 +25,8 @@ class App:
         self.root = root
         self.mac = ""
         self.client = None
+        # Flag để xác định xem đã đăng ký trước đó hay chưa
+        self.skip_check = False
 
         # Cài đặt background và hiển thị ảnh nền
         self.root.configure(bg="#e0f7fa")
@@ -32,9 +35,43 @@ class App:
         self.bg_label = tk.Label(root, image=self.bg_photo)
         self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
 
-        self.frame_mac = tk.Frame(root, bg=None, bd=0, highlightthickness=0)
-        self.frame_menu = tk.Frame(root, bg=None, bd=0, highlightthickness=0)
-        self.build_mac_screen()
+        # Load ảnh minh họa cho các hình thức nhận diện
+        try:
+            self.face_img = Image.open("face.jpg").resize((150, 150))
+            self.face_photo = ImageTk.PhotoImage(self.face_img)
+        except Exception as e:
+            print("Error loading face.jpg:", e)
+            self.face_photo = None
+
+        try:
+            self.fingerprint_img = Image.open("fingerprint.jpg").resize((150, 150))
+            self.fingerprint_photo = ImageTk.PhotoImage(self.fingerprint_img)
+        except Exception as e:
+            print("Error loading fingerprint.jpg:", e)
+            self.fingerprint_photo = None
+
+        try:
+            self.idcard_img = Image.open("idcard.jpg").resize((150, 150))
+            self.idcard_photo = ImageTk.PhotoImage(self.idcard_img)
+        except Exception as e:
+            print("Error loading idcard.jpg:", e)
+            self.idcard_photo = None
+
+        self.frame_mac = tk.Frame(root, bd=0, highlightthickness=0)
+        self.frame_menu = tk.Frame(root, bd=0, highlightthickness=0)
+        
+        # Nếu đã có file lưu MAC và MAC hợp lệ, bỏ qua màn hình nhập và không cần kiểm tra phản hồi từ server
+        if os.path.exists("device_mac.txt"):
+            with open("device_mac.txt", "r", encoding="utf-8") as f:
+                stored_mac = f.read().strip()
+            if validate_mac(stored_mac):
+                self.mac = stored_mac
+                self.skip_check = True
+                self.connect_mqtt_and_send(self.mac, skip_check=True)
+            else:
+                self.build_mac_screen()
+        else:
+            self.build_mac_screen()
 
     def build_mac_screen(self):
         self.clear_frames()
@@ -47,7 +84,7 @@ class App:
                               justify="center", bd=3, bg="white")
         self.entry.pack(pady=10)
 
-        keyboard_frame = tk.Frame(self.frame_mac, bg=None)
+        keyboard_frame = tk.Frame(self.frame_mac)
         keyboard_frame.pack()
 
         keys = [
@@ -57,7 +94,7 @@ class App:
         ]
 
         for row in keys:
-            row_frame = tk.Frame(keyboard_frame, bg=None)
+            row_frame = tk.Frame(keyboard_frame)
             row_frame.pack(pady=2)
             for key in row:
                 btn = tk.Button(row_frame, text=key, width=4, height=2, font=("Arial", 16),
@@ -65,7 +102,7 @@ class App:
                                 command=lambda k=key: self.entry.insert(tk.END, k))
                 btn.pack(side=tk.LEFT, padx=2)
 
-        func_frame = tk.Frame(self.frame_mac, bg=None)
+        func_frame = tk.Frame(self.frame_mac)
         func_frame.pack(pady=10)
 
         tk.Button(func_frame, text="Xóa", width=6, height=2, font=("San Francisco", 14),
@@ -90,7 +127,7 @@ class App:
         else:
             messagebox.showerror("Error", "Invalid MAC address!\nFormat: AA:BB:CC:DD:EE:FF")
 
-    def connect_mqtt_and_send(self, mac):
+    def connect_mqtt_and_send(self, mac, skip_check=False):
         try:
             self.client = mqtt.Client()
             self.client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
@@ -103,7 +140,10 @@ class App:
 
             self.client.subscribe(MQTT_SUB_TOPIC)
             self.client.publish(MQTT_PUB_TOPIC, mac)
-            # Không hiển thị thông báo ngay lúc gửi MAC, chờ phản hồi từ server
+            
+            # Nếu đã đăng ký từ trước, không cần chờ phản hồi "thành công" từ server
+            if skip_check:
+                self.show_main_menu()
 
             self.send_healthcheck()
 
@@ -111,6 +151,10 @@ class App:
             messagebox.showerror("MQTT Error", str(e))
 
     def on_message(self, client, userdata, msg):
+        # Nếu đã đăng ký từ file thì bỏ qua xử lý phản hồi từ server
+        if self.skip_check:
+            return
+
         payload = msg.payload.decode()
         print(f"[MQTT] Received from {msg.topic}: {payload}")
         if msg.topic == MQTT_SUB_TOPIC:
@@ -129,27 +173,39 @@ class App:
             }
             self.client.publish(MQTT_HEALTH_TOPIC, json.dumps(heartbeat))
             print("[MQTT] Healthcheck sent:", heartbeat)
-
         self.root.after(10000, self.send_healthcheck)
 
     def show_main_menu(self):
         self.clear_frames()
         self.frame_menu.place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Layout 3 phần nằm ngang, mỗi phần có ảnh minh họa và tên hình thức
+        face_button = tk.Button(self.frame_menu, image=self.face_photo, 
+                                text="Khuôn mặt",
+                                compound="top", font=("Arial", 14),
+                                width=150, height=180, command=self.handle_face)
+        face_button.pack(side=tk.LEFT, padx=10, pady=10)
 
-        tk.Label(self.frame_menu, text="Hãy lựa chọn hình thức sinh trắc học", 
-                 font=("Arial", 18, "bold"), bg="red", fg="white").pack(pady=20)
+        fingerprint_button = tk.Button(self.frame_menu, image=self.fingerprint_photo, 
+                                       text="Vân tay",
+                                       compound="top", font=("Arial", 14),
+                                       width=150, height=180, command=self.handle_fingerprint)
+        fingerprint_button.pack(side=tk.LEFT, padx=10, pady=10)
 
-        tk.Button(self.frame_menu, text="Nhận diện bằng khuôn mặt", font=("Arial", 16),
-                  width=25, bg="#bbdefb", command=self.handle_face).pack(pady=10)
-
-        tk.Button(self.frame_menu, text="Nhận diện bằng vân tay", font=("Arial", 16),
-                  width=25, bg="#ffe0b2", command=self.handle_barcode).pack(pady=10)
+        idcard_button = tk.Button(self.frame_menu, image=self.idcard_photo, 
+                                  text="Thẻ căn cước",
+                                  compound="top", font=("Arial", 14),
+                                  width=150, height=180, command=self.handle_idcard)
+        idcard_button.pack(side=tk.LEFT, padx=10, pady=10)
 
     def handle_face(self):
         messagebox.showinfo("Info", "Open camera for face recognition (not implemented)")
 
-    def handle_barcode(self):
-        messagebox.showinfo("Info", "Open barcode scanner (not implemented)")
+    def handle_fingerprint(self):
+        messagebox.showinfo("Info", "Open fingerprint scanner (not implemented)")
+
+    def handle_idcard(self):
+        messagebox.showinfo("Info", "Open ID card recognition (not implemented)")
 
     def clear_frames(self):
         for frame in (self.frame_mac, self.frame_menu):
@@ -161,6 +217,3 @@ if __name__ == "__main__":
     root.geometry("600x600")
     app = App(root)
     root.mainloop()
-    
-    
-    
