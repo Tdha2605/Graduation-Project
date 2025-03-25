@@ -101,51 +101,40 @@ Below is the high-level flow of how the system operates:
    sudo apt-get install python3-pip python3-opencv python3-pil
    pip3 install paho-mqtt
    # Install other libs if needed
-Usage
-First Run:
+## Usage
 
-The system checks for a stored MAC in device_mac.txt.
+### First Run
+1. The system checks for a stored MAC in `device_mac.txt`.  
+2. If none is found, you are prompted to enter a MAC address on the touch screen keyboard.  
+3. The device sends the MAC to the server for registration.  
+4. *(If this is a brand-new device, the server should respond with a success message.)*
 
-If none is found, you are prompted to enter a MAC address on the touch screen keyboard.
+### Subsequent Runs
+1. The device reads the saved MAC and immediately attempts MQTT connection.  
+2. It automatically shows the main menu with three options:  
+   - **Face Recognition**  
+   - **Fingerprint**  
+   - **ID Card**  
 
-The device sends the MAC to the server for registration.
+### Selecting a Biometric Method
+- For demonstration, each method just shows a pop-up message.
+- In a real deployment, you would integrate actual face/fingerprint/ID scanning code here.
 
-(If this is a brand-new device, the server should respond with a success message.)
+### Door Lock & Alerts
+- Upon successful recognition, the device can trigger the door lock to open.
+- If the vibration sensor or IR sensor detects unusual activity, it can sound the buzzer or notify the server.
 
-Subsequent Runs:
+### Monitoring
+- The server logs all events in a database.
+- The web client can display device status, user entries, and sensor alerts in real time.
 
-The device reads the saved MAC and immediately attempts MQTT connection.
+---
 
-It automatically shows the main menu with three options:
+## License
 
-Face Recognition
+This project is distributed under the [MIT License](https://opensource.org/licenses/MIT). You are free to use and modify it for your own needs. See the `LICENSE` file for details.
 
-Fingerprint
+---
 
-ID Card
-
-Selecting a Biometric Method:
-
-For demonstration, each method just shows a pop-up message.
-
-In a real deployment, you would integrate actual face/fingerprint/ID scanning code here.
-
-Door Lock & Alerts:
-
-Upon successful recognition, the device can trigger the door lock to open.
-
-If the vibration sensor or IR sensor detects unusual activity, it can sound the buzzer or notify the server.
-
-Monitoring:
-
-The server logs all events in a database.
-
-The web client can display device status, user entries, and sensor alerts in real time.
-
-License
-This project is distributed under the MIT License. You are free to use and modify it for your own needs. See the LICENSE file for details.
-
-Thank you for using our Access Control & Monitoring System!
+**Thank you for using our Access Control & Monitoring System!**  
 For additional questions, suggestions, or troubleshooting, please open an issue or contact the project maintainers.
-
-
