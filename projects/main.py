@@ -79,23 +79,21 @@ class App:
             if DEBUG:
                 print("[DEBUG] MQTT config loaded:", self.mqtt_config)
         else:
+            # First time: Push admin login screen.
             self.push_screen("admin_login", self.build_admin_login_screen)
-            return
 
         self.root.configure(fg_color=BG_COLOR)
         self.re_init_images()
         self.create_config_button()
         self.show_main_menu()
 
-        # Setup MQTT manager
         self.mqtt_manager = MQTTManager(self.mqtt_config, self.mac, debug=DEBUG)
         self.mqtt_manager.on_token_received = self.on_token_received
         self.mqtt_manager.on_connection_status_change = self.update_connection_status
+        
+        if self.mqtt_config:
+            self.mqtt_manager.connect_and_register()
 
-        # Start registration process
-        self.mqtt_manager.connect_and_register()
-
-        # Schedule healthcheck periodically
         self.schedule_healthcheck()
 
     def schedule_healthcheck(self):
@@ -160,8 +158,9 @@ class App:
             command=self.reconfigure,
             width=70,
             height=50,
-            fg_color="#ba8809",
-            font=("Segoe UI", 18, "bold")
+            fg_color="#4f918b",
+            font=("Segoe UI", 18, "bold"),
+            text_color="white", 
         )
         self.config_button.place(relx=0.98, rely=0.02, anchor="ne")
 
@@ -180,21 +179,43 @@ class App:
         self.clear_frames()
         self.frame_mqtt = ctk.CTkFrame(self.root, fg_color="transparent")
         self.frame_mqtt.place(relx=0.5, rely=0.25, anchor="center")
-        container = ctk.CTkFrame(self.frame_mqtt, fg_color="white", corner_radius=10)
+        container = ctk.CTkFrame(self.frame_mqtt, fg_color="transparent", corner_radius=10)
         container.pack(padx=20, pady=20)
-        ctk.CTkLabel(container, text="Xác thực danh tính", font=("Segoe UI", 28, "bold"), text_color="#222")\
-            .grid(row=0, column=0, columnspan=2, pady=(20,30))
-        self.admin_user_entry = ctk.CTkEntry(container, width=200, height=40,
-                                              placeholder_text="Tài khoản", font=("Segoe UI",20),
-                                              justify="center")
+        ctk.CTkLabel(
+            container,
+            text="Xác thực danh tính",
+            font=("Segoe UI", 28, "bold"),
+            text_color="#222"
+        ).grid(row=0, column=0, columnspan=2, pady=(20,30))
+        self.admin_user_entry = ctk.CTkEntry(
+            container,
+            width=200,
+            height=40,
+            placeholder_text="Tài khoản",
+            font=("Segoe UI",20),
+            justify="center"
+        )
         self.admin_user_entry.grid(row=2, column=0, padx=10, pady=(0,20))
-        self.admin_pass_entry = ctk.CTkEntry(container, width=200, height=40, show="*",
-                                              placeholder_text="Mật khẩu", font=("Segoe UI",20),
-                                              justify="center")
+        self.admin_pass_entry = ctk.CTkEntry(
+            container,
+            width=200,
+            height=40,
+            show="*",
+            placeholder_text="Mật khẩu",
+            font=("Segoe UI",20),
+            justify="center"
+        )
         self.admin_pass_entry.grid(row=2, column=1, padx=10, pady=(0,30))
-        ctk.CTkButton(container, text="Đăng nhập", width=150, height=40, font=("Segoe UI", 24),
-                      fg_color="#3738e2", command=self.check_admin_login)\
-            .grid(row=3, column=0, columnspan=2, padx=10, pady=(0,20))
+        ctk.CTkButton(
+            container,
+            text="Đăng nhập",
+            width=150,
+            height=40,
+            font=("Segoe UI", 24, "bold"),
+            fg_color="#4f918b",
+            text_color="white",
+            command=self.check_admin_login
+        ).grid(row=3, column=0, columnspan=2, padx=10, pady=(0,20))
 
     def check_admin_login(self):
         username = self.admin_user_entry.get()
@@ -214,32 +235,73 @@ class App:
         self.clear_frames()
         self.frame_mqtt = ctk.CTkFrame(self.root, fg_color="transparent")
         self.frame_mqtt.place(relx=0.5, rely=0.25, anchor="center")
-        container = ctk.CTkFrame(self.frame_mqtt, fg_color="white", corner_radius=10)
+        container = ctk.CTkFrame(self.frame_mqtt, fg_color="transparent", corner_radius=10)
         container.pack(padx=20, pady=20)
-        ctk.CTkLabel(container, text="Đăng ký thiết bị", font=("Segoe UI",20,"bold"), text_color="#222")\
-            .grid(row=0, column=0, columnspan=2, pady=(10,15))
-        self.server_entry = ctk.CTkEntry(container, width=200, height=40,
-                                         placeholder_text="Địa chỉ IP", font=("Segoe UI",16),
-                                         justify="center")
+        ctk.CTkLabel(
+            container,
+            text="Đăng ký thiết bị",
+            font=("Segoe UI",20,"bold"),
+            text_color="#222"
+        ).grid(row=0, column=0, columnspan=2, pady=(10,15))
+        self.server_entry = ctk.CTkEntry(
+            container,
+            width=200,
+            height=40,
+            placeholder_text="Địa chỉ IP",
+            font=("Segoe UI",16),
+            justify="center"
+        )
         self.server_entry.grid(row=2, column=0, padx=10, pady=(0,10))
-        self.port_entry = ctk.CTkEntry(container, width=200, height=40,
-                                       placeholder_text="Cổng", font=("Segoe UI",16),
-                                       justify="center")
+        self.port_entry = ctk.CTkEntry(
+            container,
+            width=200,
+            height=40,
+            placeholder_text="Cổng",
+            font=("Segoe UI",16),
+            justify="center"
+        )
         self.port_entry.grid(row=2, column=1, padx=10, pady=(0,10))
-        self.mqtt_user_entry = ctk.CTkEntry(container, width=200, height=40,
-                                            placeholder_text="Tài khoản MQTT", font=("Segoe UI",16),
-                                            justify="center")
+        self.mqtt_user_entry = ctk.CTkEntry(
+            container,
+            width=200,
+            height=40,
+            placeholder_text="Tài khoản MQTT",
+            font=("Segoe UI",16),
+            justify="center"
+        )
         self.mqtt_user_entry.grid(row=4, column=0, padx=10, pady=(0,10))
-        self.mqtt_pass_entry = ctk.CTkEntry(container, width=200, height=40, show="*",
-                                            placeholder_text="Mật khẩu MQTT", font=("Segoe UI",16),
-                                            justify="center")
+        self.mqtt_pass_entry = ctk.CTkEntry(
+            container,
+            width=200,
+            height=40,
+            show="*",
+            placeholder_text="Mật khẩu MQTT",
+            font=("Segoe UI",16),
+            justify="center"
+        )
         self.mqtt_pass_entry.grid(row=4, column=1, padx=10, pady=(0,10))
-        ctk.CTkButton(container, text="Quay lại", width=150, height=40, font=("Segoe UI",18,"bold"),
-                      fg_color="gray", hover_color="orange", command=self.go_back)\
-            .grid(row=5, column=0, padx=10, pady=(10,10))
-        ctk.CTkButton(container, text="Đăng ký", width=150, height=40, font=("Segoe UI",18),
-                      fg_color="#3738e2", hover_color="#218838", command=self.save_and_connect)\
-            .grid(row=5, column=1, padx=10, pady=(10,10))
+        ctk.CTkButton(
+            container,
+            text="Quay lại",
+            width=150,
+            height=40,
+            font=("Segoe UI",18,"bold"),
+            fg_color="#4f918b",
+            hover_color="orange",
+            text_color="white",
+            command=self.go_back
+        ).grid(row=5, column=0, padx=10, pady=(10,10))
+        ctk.CTkButton(
+            container,
+            text="Đăng ký",
+            width=150,
+            height=40,
+            font=("Segoe UI",18,"bold"),
+            fg_color="#4f918b",
+            hover_color="#218838",
+            text_color="white",
+            command=self.save_and_connect
+        ).grid(row=5, column=1, padx=10, pady=(10,10))
 
     def save_and_connect(self):
         broker = self.server_entry.get()
@@ -295,7 +357,7 @@ class App:
         self.clear_frames()
         self.show_background()
 
-        # Create a transparent container so the background is visible
+        # Create a transparent container for options
         self.frame_menu = ctk.CTkFrame(self.root, fg_color="transparent")
         self.frame_menu.place(relx=0.5, rely=0.5, anchor="center")
 
@@ -306,7 +368,6 @@ class App:
             (self.fingerprint_img, "", fingerprint.open_fingerprint_scanner)
         ]
 
-        # For each option, create a frame and a clickable label (acting as a button)
         for idx, (img, label, cmd) in enumerate(options):
             option_frame = ctk.CTkFrame(
                 self.frame_menu,
@@ -329,7 +390,6 @@ class App:
                 compound="top"
             )
             option_label.place(relx=0.5, rely=0.5, anchor="center")
-            # Bind a click event to trigger the command
             option_label.bind("<Button-1>", lambda e, cmd=cmd: cmd())
 
     def handle_face(self):
