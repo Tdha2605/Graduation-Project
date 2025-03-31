@@ -17,10 +17,7 @@ import fingerprint
 DEBUG = True
 
 BG_COLOR = "#F5F5F5"
-BUTTON_BG = "#FFFFFF"
 BUTTON_FG = "#333333"
-ACTIVE_BG = "#EAEAEA"
-ACTIVE_FG = "#333333"
 BUTTON_FONT = ("Segoe UI", 28)
 BUTTON_WIDTH = 240
 BUTTON_HEIGHT = 240
@@ -45,7 +42,7 @@ class App:
         self.screen_history = []
         self.connection_status_icon = None
 
-        # Load connection status images from projects/images folder
+        # Load connection status images
         try:
             self.connected_image = CTkImage(Image.open("projects/images/connected.jpg"), size=(50, 50))
             self.disconnected_image = CTkImage(Image.open("projects/images/disconnected.jpg"), size=(50, 50))
@@ -67,9 +64,9 @@ class App:
         self.loading_progress = None
         self.bg_label = None
 
-        # Load background image from projects/images folder
+        # Load background image
         try:
-            self.bg_image = Image.open("projects/images/B1.jpg").resize((1024,600))
+            self.bg_image = Image.open("projects/images/background.jpeg").resize((1024,600))
             self.bg_photo = CTkImage(self.bg_image, size=(1024,600))
         except Exception:
             pass
@@ -123,7 +120,7 @@ class App:
         except Exception:
             self.fingerprint_img = None
         try:
-            self.idcard_img = CTkImage(Image.open("projects/images/idcard.png"), size=(250,250))
+            self.idcard_img = CTkImage(Image.open("projects/images/id_card.png"), size=(250,250))
         except Exception:
             self.idcard_img = None
 
@@ -157,31 +154,26 @@ class App:
             self.show_main_menu()
 
     def create_config_button(self):
-        # Update the config button command to reconfigure the device.
         self.config_button = ctk.CTkButton(
             self.root,
             text="Cài Đặt",
             command=self.reconfigure,
             width=70,
             height=50,
-            fg_color="#0B3557"
+            fg_color="#ba8809",
+            font=("Segoe UI", 18, "bold")
         )
         self.config_button.place(relx=0.98, rely=0.02, anchor="ne")
 
     def reconfigure(self):
-        """Disconnect current MQTT connection, remove configuration, and allow reconnection to a new server."""
-        # Clear current UI frames.
         self.clear_frames()
-        # Disconnect the current MQTT client and set mqtt_manager to None.
         if self.mqtt_manager:
             self.mqtt_manager.disconnect_client()
             self.mqtt_manager = None
-        # Remove the current configuration file.
         if os.path.exists(CONFIG_FILE):
             os.remove(CONFIG_FILE)
             if DEBUG:
                 print("[DEBUG] Removed configuration file:", CONFIG_FILE)
-        # Push admin login screen for new configuration.
         self.push_screen("admin_login", self.build_admin_login_screen)
 
     def build_admin_login_screen(self):
@@ -276,7 +268,6 @@ class App:
     def _finish_connection(self):
         if self.loading_progress and self.loading_progress.winfo_exists():
             self.loading_progress.destroy()
-        # Reinitialize MQTT manager if it's None, or update config if it exists.
         if self.mqtt_manager is None:
             self.mqtt_manager = MQTTManager(self.mqtt_config, self.mac, debug=DEBUG)
             self.mqtt_manager.on_token_received = self.on_token_received
@@ -284,7 +275,6 @@ class App:
         else:
             self.mqtt_manager.mqtt_config = self.mqtt_config
         self.mqtt_manager.connect_and_register()
-        # After reconnecting, show the main menu.
         self.show_main_menu()
 
     def save_mqtt_config(self, broker, port, mqtt_username, mqtt_password):
@@ -304,28 +294,45 @@ class App:
         self.screen_history = [("main_menu", self.show_main_menu)]
         self.clear_frames()
         self.show_background()
-        self.frame_menu = ctk.CTkFrame(self.root, fg_color="white")
+
+        # Create a transparent container so the background is visible
+        self.frame_menu = ctk.CTkFrame(self.root, fg_color="transparent")
         self.frame_menu.place(relx=0.5, rely=0.5, anchor="center")
-        for widget in self.frame_menu.winfo_children():
-            widget.destroy()
+
+        # Define the three options as (image, label, command)
         options = [
-            (self.face_img, "Khuôn Mặt", self.handle_face),
-            (self.idcard_img, "Thẻ CMND", id_card.open_id_card_recognition),
-            (self.fingerprint_img, "Vân Tay", fingerprint.open_fingerprint_scanner)
+            (self.face_img, "", self.handle_face),
+            (self.idcard_img, "", id_card.open_id_card_recognition),
+            (self.fingerprint_img, "", fingerprint.open_fingerprint_scanner)
         ]
+
+        # For each option, create a frame and a clickable label (acting as a button)
         for idx, (img, label, cmd) in enumerate(options):
-            option_frame = ctk.CTkFrame(self.frame_menu, width=BUTTON_WIDTH, height=BUTTON_HEIGHT,
-                                         fg_color=BUTTON_BG, corner_radius=10)
+            option_frame = ctk.CTkFrame(
+                self.frame_menu,
+                width=BUTTON_WIDTH,
+                height=BUTTON_HEIGHT,
+                fg_color="transparent",
+                corner_radius=0,
+                border_width=0
+            )
             option_frame.grid(row=0, column=idx, padx=PAD_X, pady=PAD_Y)
             option_frame.grid_propagate(False)
-            button = ctk.CTkButton(option_frame, image=img, text=label, command=cmd,
-                                    width=BUTTON_WIDTH, height=BUTTON_HEIGHT,
-                                    fg_color=BUTTON_BG, hover_color=ACTIVE_BG,
-                                    text_color=BUTTON_FG, font=BUTTON_FONT, compound="top")
-            button.place(relx=0.5, rely=0.5, anchor="center")
+
+            option_label = ctk.CTkLabel(
+                option_frame,
+                image=img,
+                text=label,
+                fg_color="transparent",
+                text_color=BUTTON_FG,
+                font=BUTTON_FONT,
+                compound="top"
+            )
+            option_label.place(relx=0.5, rely=0.5, anchor="center")
+            # Bind a click event to trigger the command
+            option_label.bind("<Button-1>", lambda e, cmd=cmd: cmd())
 
     def handle_face(self):
-        # Clear current frames and embed the face recognition sub-display in the main window.
         self.clear_frames()
         face.open_face_recognition(self.root)
 
