@@ -1,5 +1,6 @@
 # main.py
 import os
+from dotenv import load_dotenv
 import json
 import time
 import uuid
@@ -13,6 +14,11 @@ from mqtt import MQTTManager
 import face
 import id_card
 import fingerprint
+
+load_dotenv()
+
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
 
 DEBUG = True
 
@@ -220,7 +226,7 @@ class App:
     def check_admin_login(self):
         username = self.admin_user_entry.get()
         password = self.admin_pass_entry.get()
-        if username == "navis" and password == "navis@123":
+        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
             if DEBUG:
                 print("[DEBUG] Admin authentication successful.")
             self.admin_username = username
