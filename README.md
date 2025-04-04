@@ -55,8 +55,19 @@ The end goal is a self-contained, Internet-connected device that manages physica
 4. **Infrared Array Sensor (AMG8833)** connected via I2C  
 5. **Vibration Sensor** connected to a GPIO pin  
 6. **Buzzer** connected to a GPIO pin  
-7. **Door Lock** (electronic lock or solenoid) connected to GPIO (with appropriate driver/transistor/relay)  
-8. **Network Connection** (Ethernet or Wi-Fi)
+7. **Door Lock** (electronic lock or solenoid) connected to GPIO (with appropriate driver/transistor/relay)
+   INT - GPIO27 - PIN13
+   VIN - 3V3 - PIN 1
+   GND - GND - PIN 14
+8. **AGM8833** (Thermal Camera)
+   VIN - 5V - PIN 2
+   GND - GND - PIN 20/30/34
+   SDA - PIN 3
+   SCL - PIN 5
+9. **Door Sensor**
+    GND - PIN 9
+    VCC - PIN 11
+11. **Network Connection** (Ethernet or Wi-Fi)
 
 ---
 
