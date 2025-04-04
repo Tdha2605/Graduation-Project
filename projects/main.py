@@ -1,4 +1,3 @@
-# main.py
 import os
 from dotenv import load_dotenv
 import json
@@ -8,20 +7,19 @@ import customtkinter as ctk
 from tkinter import messagebox
 from PIL import Image
 from customtkinter import CTkImage
-from datetime import datetime, timezone
-
+from datetime import datetime
+from amg8833 import AMG8833Sensor
 from mqtt import MQTTManager
+import threading
 import face
 import id_card
 import fingerprint
-
+from door import Door
+os.chdir("/home/anhtd/projects")
 load_dotenv()
-
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
-
 DEBUG = True
-
 BG_COLOR = "#F5F5F5"
 BUTTON_FG = "#333333"
 BUTTON_FONT = ("Segoe UI", 28)
@@ -47,84 +45,111 @@ class App:
         self.mqtt_config = {}
         self.screen_history = []
         self.connection_status_icon = None
-
-        # Load connection status images
         try:
-            self.connected_image = CTkImage(Image.open("projects/images/connected.jpg"), size=(50, 50))
-            self.disconnected_image = CTkImage(Image.open("projects/images/disconnected.jpg"), size=(50, 50))
+            self.connected_image = CTkImage(Image.open("/home/anhtd/projects/images/connected.jpg"), size=(50, 50))
+            self.disconnected_image = CTkImage(Image.open("/home/anhtd/projects/images/disconnected.jpg"), size=(50, 50))
         except Exception as e:
             self.connected_image = self.disconnected_image = None
             if DEBUG:
                 print("[DEBUG] Error loading connection status images:", e)
-
         self.connection_status_label = ctk.CTkLabel(root, image=self.disconnected_image, text="")
         self.connection_status_label.place(relx=0.02, rely=0.02, anchor="nw")
-        
-        # Frames
         self.frame_mqtt = None
         self.frame_menu = None
+        self.face_frame = None
         self.bg_photo = None
         self.face_img = None
         self.fingerprint_img = None
         self.idcard_img = None
         self.loading_progress = None
         self.bg_label = None
-
-        # Load background image
+        self.face_info_label = None
+        self.face_image_label = None
+        self.name_label = None
+        self.auto_back_scheduled = False
         try:
-            self.bg_image = Image.open("projects/images/background.jpeg").resize((1024,600))
+            self.bg_image = Image.open("/home/anhtd/projects/images/background.jpeg").resize((1024,600))
             self.bg_photo = CTkImage(self.bg_image, size=(1024,600))
-        except Exception:
-            pass
-
+        except Exception as e:
+            if DEBUG:
+                print("[DEBUG] Error loading background image:", e)
         self.show_background()
-
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
                 self.mqtt_config = json.load(f)
             if DEBUG:
                 print("[DEBUG] MQTT config loaded:", self.mqtt_config)
         else:
-            # First time: Push admin login screen.
             self.push_screen("admin_login", self.build_admin_login_screen)
-
         self.root.configure(fg_color=BG_COLOR)
         self.re_init_images()
         self.create_config_button()
         self.show_main_menu()
-
         self.mqtt_manager = MQTTManager(self.mqtt_config, self.mac, debug=DEBUG)
         self.mqtt_manager.on_token_received = self.on_token_received
         self.mqtt_manager.on_connection_status_change = self.update_connection_status
-        
         if self.mqtt_config:
             self.mqtt_manager.connect_and_register()
-
         self.schedule_healthcheck()
+        self.schedule_guest_cleanup()
+        self.amg_sensor = AMG8833Sensor()
+        self.door_sensor = Door(sensor_pin=17, relay_pin=27, mqtt_publish_callback=self.door_state_changed, relay_active_high=False)
+
 
     def schedule_healthcheck(self):
         if self.mqtt_manager and self.mqtt_manager.connected:
             self.mqtt_manager.send_healthcheck()
         self.root.after(10000, self.schedule_healthcheck)
 
+    def schedule_guest_cleanup(self):
+        self.clean_guest_data()
+        # Run cleanup once every 24 hours (86400000 ms)
+        self.root.after(86400000, self.schedule_guest_cleanup)
+
+    def clean_guest_data(self):
+        today = datetime.now().date()
+        guest_dirs = [os.path.join("guest", "embeddings"), os.path.join("guest", "images")]
+        for directory in guest_dirs:
+            if os.path.exists(directory):
+                for filename in os.listdir(directory):
+                    filepath = os.path.join(directory, filename)
+                    if os.path.isfile(filepath):
+                        file_date = datetime.fromtimestamp(os.path.getmtime(filepath)).date()
+                        if file_date < today:
+                            os.remove(filepath)
+                            if DEBUG:
+                                print(f"[DEBUG] Removed old guest file: {filepath}")
+
     def on_token_received(self, token):
         self.token = token
-        messagebox.showinfo("Thông Báo", "Đăng ký thiết bị thành công")
+        #messagebox.showinfo("Info", "Device registration successful")
         if self.mqtt_manager is not None:
             self.mqtt_manager.token = token
             self.mqtt_manager.connect_with_token()
 
+    def door_state_changed(self, payload):
+        payload["MacAddress"] = self.mac
+        payload["Token"] = self.token if self.token else ""
+        json_payload = json.dumps(payload, separators=(",", ":"))
+        print("Door state changed, publishing payload:", json_payload)
+        if self.mqtt_manager and self.mqtt_manager.client:
+            self.mqtt_manager.client.publish("iot/devices/doorstatus", payload=json_payload)
+        else:
+            print("MQTT Manager not ready; cannot publish door state.")
+
     def re_init_images(self):
         try:
-            self.face_img = CTkImage(Image.open("projects/images/face.png"), size=(250,250))
-        except Exception:
+            self.face_img = CTkImage(Image.open("/home/anhtd/projects/images/face.png"), size=(250,250))
+        except Exception as e:
+            if DEBUG:
+                print("[DEBUG] Error loading face image:", e)
             self.face_img = None
         try:
-            self.fingerprint_img = CTkImage(Image.open("projects/images/fingerprint.png"), size=(250,250))
+            self.fingerprint_img = CTkImage(Image.open("/home/anhtd/projects/images/fingerprint.png"), size=(250,250))
         except Exception:
             self.fingerprint_img = None
         try:
-            self.idcard_img = CTkImage(Image.open("projects/images/id_card.png"), size=(250,250))
+            self.idcard_img = CTkImage(Image.open("/home/anhtd/projects/images/id_card.png"), size=(250,250))
         except Exception:
             self.idcard_img = None
 
@@ -160,13 +185,13 @@ class App:
     def create_config_button(self):
         self.config_button = ctk.CTkButton(
             self.root,
-            text="Cài Đặt",
+            text="Settings",
             command=self.reconfigure,
             width=70,
             height=50,
             fg_color="#4f918b",
             font=("Segoe UI", 18, "bold"),
-            text_color="white", 
+            text_color="white",
         )
         self.config_button.place(relx=0.98, rely=0.02, anchor="ne")
 
@@ -189,7 +214,7 @@ class App:
         container.pack(padx=20, pady=20)
         ctk.CTkLabel(
             container,
-            text="Xác thực danh tính",
+            text="Identity Verification",
             font=("Segoe UI", 28, "bold"),
             text_color="#222"
         ).grid(row=0, column=0, columnspan=2, pady=(20,30))
@@ -197,7 +222,7 @@ class App:
             container,
             width=200,
             height=40,
-            placeholder_text="Tài khoản",
+            placeholder_text="Username",
             font=("Segoe UI",20),
             justify="center"
         )
@@ -207,14 +232,14 @@ class App:
             width=200,
             height=40,
             show="*",
-            placeholder_text="Mật khẩu",
+            placeholder_text="Password",
             font=("Segoe UI",20),
             justify="center"
         )
         self.admin_pass_entry.grid(row=2, column=1, padx=10, pady=(0,30))
         ctk.CTkButton(
             container,
-            text="Đăng nhập",
+            text="Login",
             width=150,
             height=40,
             font=("Segoe UI", 24, "bold"),
@@ -233,7 +258,7 @@ class App:
             self.admin_password = password
             self.push_screen("mqtt_config", self.build_mqtt_config_screen)
         else:
-            messagebox.showerror("Truy Cập Bị Từ Chối", "Tài khoản hoặc mật khẩu không hợp lệ")
+            messagebox.showerror("Access Denied", "Invalid username or password")
             self.admin_user_entry.delete(0, "end")
             self.admin_pass_entry.delete(0, "end")
 
@@ -245,7 +270,7 @@ class App:
         container.pack(padx=20, pady=20)
         ctk.CTkLabel(
             container,
-            text="Đăng ký thiết bị",
+            text="Device Registration",
             font=("Segoe UI",20,"bold"),
             text_color="#222"
         ).grid(row=0, column=0, columnspan=2, pady=(10,15))
@@ -253,7 +278,7 @@ class App:
             container,
             width=200,
             height=40,
-            placeholder_text="Địa chỉ IP",
+            placeholder_text="IP Address",
             font=("Segoe UI",16),
             justify="center"
         )
@@ -262,7 +287,7 @@ class App:
             container,
             width=200,
             height=40,
-            placeholder_text="Cổng",
+            placeholder_text="Port",
             font=("Segoe UI",16),
             justify="center"
         )
@@ -271,7 +296,7 @@ class App:
             container,
             width=200,
             height=40,
-            placeholder_text="Tài khoản MQTT",
+            placeholder_text="MQTT Username",
             font=("Segoe UI",16),
             justify="center"
         )
@@ -281,14 +306,14 @@ class App:
             width=200,
             height=40,
             show="*",
-            placeholder_text="Mật khẩu MQTT",
+            placeholder_text="MQTT Password",
             font=("Segoe UI",16),
             justify="center"
         )
         self.mqtt_pass_entry.grid(row=4, column=1, padx=10, pady=(0,10))
         ctk.CTkButton(
             container,
-            text="Quay lại",
+            text="Back",
             width=150,
             height=40,
             font=("Segoe UI",18,"bold"),
@@ -299,7 +324,7 @@ class App:
         ).grid(row=5, column=0, padx=10, pady=(10,10))
         ctk.CTkButton(
             container,
-            text="Đăng ký",
+            text="Register",
             width=150,
             height=40,
             font=("Segoe UI",18,"bold"),
@@ -362,18 +387,13 @@ class App:
         self.screen_history = [("main_menu", self.show_main_menu)]
         self.clear_frames()
         self.show_background()
-
-        # Create a transparent container for options
         self.frame_menu = ctk.CTkFrame(self.root, fg_color="transparent")
         self.frame_menu.place(relx=0.5, rely=0.5, anchor="center")
-
-        # Define the three options as (image, label, command)
         options = [
-            (self.face_img, "", self.handle_face),
+            (self.face_img, "", self.show_face_recognition_screen),
             (self.idcard_img, "", id_card.open_id_card_recognition),
             (self.fingerprint_img, "", fingerprint.open_fingerprint_scanner)
         ]
-
         for idx, (img, label, cmd) in enumerate(options):
             option_frame = ctk.CTkFrame(
                 self.frame_menu,
@@ -385,7 +405,6 @@ class App:
             )
             option_frame.grid(row=0, column=idx, padx=PAD_X, pady=PAD_Y)
             option_frame.grid_propagate(False)
-
             option_label = ctk.CTkLabel(
                 option_frame,
                 image=img,
@@ -398,9 +417,70 @@ class App:
             option_label.place(relx=0.5, rely=0.5, anchor="center")
             option_label.bind("<Button-1>", lambda e, cmd=cmd: cmd())
 
-    def handle_face(self):
+    def show_face_recognition_screen(self):
         self.clear_frames()
-        face.open_face_recognition(self.root)
+        self.auto_back_scheduled = False
+        self.show_background()
+        self.face_info_label = ctk.CTkLabel(self.root, text="Face recognition is running...", anchor="center")
+        self.face_info_label.place(relx=0.5, rely=0.1, anchor="n")
+        self.face_image_label = ctk.CTkLabel(self.root, text="")
+        self.face_image_label.place(relx=0.5, rely=0.5, anchor="center")
+        self.name_label = ctk.CTkLabel(self.root, text="No face recognized yet", anchor="center", font=("Segoe UI", 20))
+        self.name_label.place(relx=0.5, rely=0.75, anchor="n")
+        threading.Thread(target=face.open_face_recognition, args=(self.update_recognized_face,), daemon=True).start()
+
+    def stop_face_recognition_and_go_back(self):
+        face.stop_face_recognition()
+        if self.face_info_label is not None:
+            self.face_info_label.destroy()
+            self.face_info_label = None
+        if self.face_image_label is not None:
+            self.face_image_label.destroy()
+            self.face_image_label = None
+        if self.name_label is not None:
+            self.name_label.destroy()
+            self.name_label = None
+        self.show_main_menu()
+
+    def update_recognized_face(self, name, score, frame):
+        def update_ui():
+            parts = name.split("_")
+            if len(parts) == 4:
+                try:
+                    guest_name, user_id, start_str, end_str = parts
+                    start_time = datetime.strptime(start_str, "%Y%m%dT%H%M")
+                    end_time = datetime.strptime(end_str, "%Y%m%dT%H%M")
+                    current_time = datetime.utcnow()
+                    allowed = (start_time <= current_time <= end_time)
+                except Exception:
+                    allowed = False
+                msg = f"Welcome, {name}" if allowed else "Sorry, It is not time for you !"
+                image_path = os.path.join("guest", "images", f"{name}.jpg")
+            else:
+                allowed = True
+                msg = f"Name: {name}"
+                image_path = os.path.join("employee", "images", f"{name}.jpg")
+            if os.path.exists(image_path):
+                img = Image.open(image_path)
+                screen_width = self.root.winfo_width() or 1024
+                screen_height = self.root.winfo_height() or 600
+                new_width = int(screen_width * 0.3)
+                new_height = int(screen_height * 0.55)
+                img = img.resize((new_width, new_height))
+                recognized_img = CTkImage(img, size=(new_width, new_height))
+                self.face_image_label.configure(image=recognized_img, text="")
+                self.face_image_label.image = recognized_img
+            self.name_label.configure(text=msg)
+            if self.mqtt_manager:
+                self.mqtt_manager.send_recognition_success(name)
+            if allowed:
+                self.door_sensor.open_door()
+                self.root.after(5000, self.door_sensor.close_door)
+            if not self.auto_back_scheduled:
+                self.auto_back_scheduled = True
+                self.root.after(2000, self.stop_face_recognition_and_go_back)
+        self.root.after(0, update_ui)
+
 
     def clear_frames(self):
         self.root.update_idletasks()
@@ -413,7 +493,7 @@ if __name__ == "__main__":
     ctk.set_appearance_mode("light")
     ctk.set_default_color_theme("blue")
     root = ctk.CTk()
-    root.title("Hệ Thống Kiểm Soát Truy Cập")
+    root.title("Access Control System")
     root.geometry("1024x600")
     app = App(root)
     root.mainloop()
