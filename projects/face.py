@@ -239,8 +239,10 @@ def open_face_recognition(on_recognition=None, on_failure_callback=None, parent_
     def recognition_task():
         nonlocal recognition_running
         last_recognition_time = time.time()
-        recognition_interval = 0.5 # Time between recognition attempts
-
+        recognition_interval = 3 # Time between recognition attempts
+        
+        print(f"[DEBUG] Recognition loop running at {datetime.now(timezone.utc).astimezone()}")
+        
         while recognition_running and not face_recog_stop_event.is_set():
             current_time = time.time()
 
@@ -265,6 +267,7 @@ def open_face_recognition(on_recognition=None, on_failure_callback=None, parent_
 
                 if name != "Unknown":
                     print(f"[DEBUG] Face recognized in thread: {name} (score: {score:.2f})")
+                    print(f"[DEBUG] Recognition time: {datetime.now(timezone.utc).astimezone()}")
                     if on_recognition:
                         # Use after_idle to run callback in main GUI thread
                         if parent_label and parent_label.winfo_exists(): parent_label.after_idle(on_recognition, name, score, frame_copy)

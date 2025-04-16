@@ -25,13 +25,13 @@ def update_fp_frame_with_error(fp_frame, message="Lỗi phần cứng", on_close
     clear_frame(fp_frame)
     try:
         # Consider a more generic error image
-        img = Image.open("/home/anhtd/projects/images/hardware_error")
+        img = Image.open("/home/anhtd/projects/images/fp_failure.png")
     except Exception:
         img = Image.new("RGB", (1024, 600), color="orange") # Orange for general error
     ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(1024, 600)) # Adjust size if needed
     lbl_img = ctk.CTkLabel(fp_frame, image=ctk_img, text="")
     lbl_img.image = ctk_img
-    lbl_img.pack(pady=(40, 10), expand=True, fill="both") # Make image fill more space
+    lbl_img.pack(pady=(10, 10), expand=True, fill="both") # Make image fill more space
 
     lbl_text = ctk.CTkLabel(fp_frame, text=message, font=ctk.CTkFont(size=18, weight="bold"), text_color="orange")
     lbl_text.pack(pady=(0, 20))
@@ -44,13 +44,13 @@ def update_fp_frame_with_success(fp_frame, user_name="", on_close=None):
     """Displays success message."""
     clear_frame(fp_frame)
     try:
-        success_img = Image.open("/home/anhtd/projects/images/fingerprint_success")
+        success_img = Image.open("/home/anhtd/projects/images/fp_success.png")
     except Exception:
         success_img = Image.new("RGB", (1024, 600), color="green")
     ctk_success = ctk.CTkImage(light_image=success_img, dark_image=success_img, size=(1024, 600)) # Adjust size
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_success, text="")
     icon_label.image = ctk_success
-    icon_label.pack(pady=(40, 10), expand=True, fill="both")
+    icon_label.pack(pady=(10, 10), expand=True, fill="both")
 
     success_text = f"Xác thực thành công!\n{user_name}" if user_name else "Xác thực thành công!"
     text_label = ctk.CTkLabel(fp_frame, text=success_text, font=ctk.CTkFont(size=18, weight="bold"), text_color="green")
@@ -63,13 +63,13 @@ def update_fp_frame_with_failure(fp_frame, message="Không tìm thấy vân tay 
     """Displays failure/not found/invalid message."""
     clear_frame(fp_frame)
     try:
-        fail_img = Image.open("/home/anhtd/projects/images/fingerprint_failure")
+        fail_img = Image.open("/home/anhtd/projects/images/fp_error.png")
     except Exception:
         fail_img = Image.new("RGB", (1024, 600), color="red")
     ctk_fail = ctk.CTkImage(light_image=fail_img, dark_image=fail_img, size=(1024, 600)) # Adjust size
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_fail, text="")
     icon_label.image = ctk_fail
-    icon_label.pack(pady=(40, 10), expand=True, fill="both")
+    icon_label.pack(pady=(10, 10), expand=True, fill="both")
 
     text_label = ctk.CTkLabel(fp_frame, text=message, font=ctk.CTkFont(size=18, weight="bold"), text_color="red")
     text_label.pack(pady=(0, 20))
@@ -81,13 +81,13 @@ def set_prompt_state(fp_frame, cancel_callback):
     """Sets initial prompt state with cancel button."""
     clear_frame(fp_frame)
     try:
-        img_grey = Image.open("/home/anhtd/projects/images/fingerprint_icon_grey")
+        img_grey = Image.open("/home/anhtd/projects/images/fp_initial.png")
     except Exception:
         img_grey = Image.new("RGB", (1024, 600), color="gray")
     ctk_img_grey = ctk.CTkImage(light_image=img_grey, dark_image=img_grey, size=(1024, 600)) # Adjust size
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_img_grey, text="")
     icon_label.image = ctk_img_grey
-    icon_label.pack(pady=(40, 10), expand=True, fill="both")
+    icon_label.pack(pady=(10, 10), expand=True, fill="both")
 
     text_label = ctk.CTkLabel(fp_frame, text="Đặt ngón tay lên cảm biến", font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
     text_label.pack(pady=(0, 20))
@@ -100,19 +100,20 @@ def set_scanning_state(fp_frame, cancel_callback):
     """Sets scanning state UI."""
     clear_frame(fp_frame)
     try:
-        img_blue = Image.open("/home/anhtd/projects/images/fingerprint_icon_blue")
+        img_blue = Image.open("/home/anhtd/projects/images/fp_scanning.png")
     except Exception:
         img_blue = Image.new("RGB", (1024, 600), color="blue")
     ctk_img_blue = ctk.CTkImage(light_image=img_blue, dark_image=img_blue, size=(1024, 600)) # Adjust size
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_img_blue, text="")
     icon_label.image = ctk_img_blue
-    icon_label.pack(pady=(40, 10), expand=True, fill="both")
+    icon_label.pack(pady=(10, 10), expand=True, fill="both")
 
     text_label = ctk.CTkLabel(fp_frame, text="Đang quét và tìm kiếm...", font=ctk.CTkFont(size=16, weight="bold"))
     text_label.pack(pady=(0, 20))
 
     cancel_button = ctk.CTkButton(fp_frame, text="Hủy", command=cancel_callback)
     cancel_button.pack(pady=10)
+    
 
 # --- REMOVED ---
 # load_finger_db()
@@ -224,7 +225,7 @@ def perform_fingerprint_verification(fp_frame, sensor, cancel_flag, on_success_c
                 # Update UI to scanning state (if frame still exists)
                 if fp_frame.winfo_exists():
                     # Use the cancel callback associated with the scanning state
-                    fp_frame.after(0, lambda: set_scanning_state(fp_frame, cancel_callback=lambda: (cancel_flag.update({"cancel": True}), fp_frame.destroy() if fp_frame.winfo_exists() else None)))
+                    fp_frame.after(2000, lambda: set_scanning_state(fp_frame, cancel_callback=lambda: (cancel_flag.update({"cancel": True}), fp_frame.destroy() if fp_frame.winfo_exists() else None)))
 
                 try:
                     # Convert image in buffer 1

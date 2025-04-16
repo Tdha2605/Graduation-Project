@@ -21,6 +21,7 @@ import id_card # Assuming exists and has open_id_card_recognition
 import fingerprint # Uses updated fingerprint module
 from door import Door
 from mqtt import MQTTManager
+import paho.mqtt.client as mqtt
 import database # Use updated database module
 # Import fingerprint sensor library
 try:
@@ -268,17 +269,6 @@ class App:
         if self.door_sensor:
             try:
                 self.door_sensor.open_door()
-                if DEBUG: print("[DEBUG] Door open command issued.")
-                # Publish door open command state
-                if self.mqtt_manager and self.mqtt_manager.connected and self.token:
-                    payload = { "MacAddress": self.mac, "DoorStatus": "OPEN_COMMAND", "Token": self.token,
-                                "DeviceTime": datetime.now(timezone.utc).isoformat(timespec='seconds') + "Z" }
-                    json_payload = json.dumps(payload, separators=(",", ":"))
-                    result, mid = self.mqtt_manager.client.publish("iot/devices/doorstatus", payload=json_payload, qos=1)
-                    # Log success/failure
-                else: 
-                    if DEBUG: 
-                        print("[DEBUG] MQTT not ready; door OPEN_COMMAND state not published.")
                 self.root.after(DOOR_OPEN_DURATION_MS, self.trigger_door_close)
             except Exception as e: print(f"[ERROR] Error opening door: {e}")
         elif DEBUG: print("[DEBUG] Door sensor not available, cannot open door.")
@@ -287,17 +277,6 @@ class App:
         if self.door_sensor:
             try:
                 self.door_sensor.close_door()
-                if DEBUG: print("[DEBUG] Door close command issued.")
-                 # Publish door close command state
-                if self.mqtt_manager and self.mqtt_manager.connected and self.token:
-                    payload = { "MacAddress": self.mac, "DoorStatus": "CLOSE_COMMAND", "Token": self.token,
-                                "DeviceTime": datetime.now(timezone.utc).isoformat(timespec='seconds') + "Z" }
-                    json_payload = json.dumps(payload, separators=(",", ":"))
-                    result, mid = self.mqtt_manager.client.publish("iot/devices/doorstatus", payload=json_payload, qos=1)
-                     # Log success/failure
-                else: 
-                    if DEBUG: 
-                        print("[DEBUG] MQTT not ready; door CLOSE_COMMAND state not published.")
             except Exception as e: print(f"[ERROR] Error closing door: {e}")
         elif DEBUG: print("[DEBUG] Door sensor not available, cannot close door.")
 
@@ -420,23 +399,22 @@ class App:
 
     def build_admin_login_screen(self):
         self.frame_mqtt = ctk.CTkFrame(self.root, fg_color=BG_COLOR, bg_color=BG_COLOR)
-        self.frame_mqtt.place(relx=0.5, rely=0.5, anchor="center")
-        ctk.CTkLabel(self.frame_mqtt, text="Xác thực tài khoản Admin", font=("Segoe UI", 24, "bold")).pack(pady=(10, 20))
-        ctk.CTkLabel(self.frame_mqtt, text="Tài khoản:", font=("Segoe UI", 16)).pack(pady=(5,0))
-        self.admin_user_entry = ctk.CTkEntry(self.frame_mqtt, width=250, height=35, placeholder_text="Admin Username", font=("Segoe UI", 14))
-        self.admin_user_entry.pack(pady=(0, 10))
-        ctk.CTkLabel(self.frame_mqtt, text="Mật khẩu:", font=("Segoe UI", 16)).pack(pady=(5,0))
-        self.admin_pass_entry = ctk.CTkEntry(self.frame_mqtt, width=250, height=35, show="*", placeholder_text="Admin Password", font=("Segoe UI", 14))
-        self.admin_pass_entry.pack(pady=(0, 20))
-        login_button = ctk.CTkButton(
-            self.frame_mqtt, text="Đăng Nhập", width=150, height=40, font=("Segoe UI", 18, "bold"),
-            fg_color="#4f918b", text_color="white", command=self.check_admin_login
-        )
-        login_button.pack(pady=(10, 20))
-        self.admin_user_entry.focus()
-        # Bind Enter key
-        self.admin_user_entry.bind("<Return>", lambda event: self.check_admin_login())
-        self.admin_pass_entry.bind("<Return>", lambda event: self.check_admin_login())
+        self.frame_mqtt.place(relx=0.5, rely=0.25, anchor="center")
+        title_label = ctk.CTkLabel(self.frame_mqtt, text="Xác thực tài khoản", font=("Segoe UI", 24, "bold"))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(10, 20))
+        user_label = ctk.CTkLabel(self.frame_mqtt, text="Tài khoản", font=("Segoe UI", 16))
+        user_label.grid(row=1, column=0, padx=(5, 10), pady=5, sticky="e")
+        self.admin_user_entry = ctk.CTkEntry(self.frame_mqtt, width=250, height=35, placeholder_text="", font=("Segoe UI", 14))
+        self.admin_user_entry.grid(row=1, column=1, padx=(10, 5), pady=5, sticky="w")
+        pass_label = ctk.CTkLabel(self.frame_mqtt, text="Mật khẩu", font=("Segoe UI", 16))
+        pass_label.grid(row=2, column=0, padx=(5, 10), pady=5, sticky="e")
+        self.admin_pass_entry = ctk.CTkEntry(self.frame_mqtt, width=250, height=35, show="*", placeholder_text="", font=("Segoe UI", 14))
+        self.admin_pass_entry.grid(row=2, column=1, padx=(10, 5), pady=5, sticky="w")
+        login_button = ctk.CTkButton(self.frame_mqtt, text="Ðăng Nhập", width=150, height=40, font=("Segoe UI", 18, "bold"), fg_color="#4f918b", text_color="white", command=self.check_admin_login)
+        login_button.grid(row=3, column=0, columnspan=2, pady=(10, 20))
+        # self.admin_user_entry.focus()
+        # self.admin_user_entry.bind("<Return>", lambda event: self.check_admin_login())
+        # self.admin_pass_entry.bind("<Return>", lambda event: self.check_admin_login())
 
 
     def check_admin_login(self):
@@ -451,37 +429,30 @@ class App:
 
     def build_mqtt_config_screen(self):
         self.frame_mqtt = ctk.CTkFrame(self.root, fg_color=BG_COLOR, bg_color=BG_COLOR)
-        self.frame_mqtt.place(relx=0.5, rely=0.5, anchor="center")
-        ctk.CTkLabel(self.frame_mqtt, text="Cấu hình kết nối MQTT", font=("Segoe UI", 24, "bold")).pack(pady=(10, 20))
-        ctk.CTkLabel(self.frame_mqtt, text="Địa Chỉ Server:", font=("Segoe UI", 16)).pack(pady=(5,0))
-        self.server_entry = ctk.CTkEntry(self.frame_mqtt, width=300, height=35, placeholder_text="mqtt.example.com", font=("Segoe UI", 14))
-        self.server_entry.pack(pady=(0, 10))
-        ctk.CTkLabel(self.frame_mqtt, text="Cổng (Port):", font=("Segoe UI", 16)).pack(pady=(5,0))
-        self.port_entry = ctk.CTkEntry(self.frame_mqtt, width=100, height=35, placeholder_text="1883 or 8883", font=("Segoe UI", 14))
-        self.port_entry.pack(pady=(0, 10))
-        self.port_entry.insert(0, "8883")
-        ctk.CTkLabel(self.frame_mqtt, text="Tài Khoản Đăng Ký:", font=("Segoe UI", 16)).pack(pady=(5,0))
-        self.mqtt_user_entry = ctk.CTkEntry(self.frame_mqtt, width=300, height=35, placeholder_text="Username for registration", font=("Segoe UI", 14))
-        self.mqtt_user_entry.pack(pady=(0, 10))
-        ctk.CTkLabel(self.frame_mqtt, text="Mật Khẩu Đăng Ký:", font=("Segoe UI", 16)).pack(pady=(5,0))
-        self.mqtt_pass_entry = ctk.CTkEntry(self.frame_mqtt, width=300, height=35, show="*", placeholder_text="Password for registration", font=("Segoe UI", 14))
-        self.mqtt_pass_entry.pack(pady=(0, 20))
+        self.frame_mqtt.place(relx=0.5, rely=0.2, anchor="center")
+        title_label = ctk.CTkLabel(self.frame_mqtt, text="CẤU HÌNH SERVER", font=("Segoe UI", 24, "bold"))
+        title_label.grid(row=0, column=0, columnspan=2, pady=(5, 20))
+   
+        self.server_entry = ctk.CTkEntry(self.frame_mqtt, width=150, height=35, placeholder_text="ĐỊA CHỈ", font=("Segoe UI", 14))
+        self.server_entry.grid(row=2, column=0, padx=5, pady=(0, 10), sticky="w")
+        self.port_entry = ctk.CTkEntry(self.frame_mqtt, width=65, height=35, placeholder_text="CỔNG", font=("Segoe UI", 14))
+        self.port_entry.grid(row=2, column=1, padx=5, pady=(0, 10), sticky="w")
+        self.mqtt_user_entry = ctk.CTkEntry(self.frame_mqtt, width=150, height=35, placeholder_text="TÀI KHOẢN", font=("Segoe UI", 14))
+        self.mqtt_user_entry.grid(row=4, column=0, padx=5, pady=(0, 10), sticky="w")
+        self.mqtt_pass_entry = ctk.CTkEntry(self.frame_mqtt, width=150, height=35, show="*", placeholder_text="MẬT KHẨU", font=("Segoe UI", 14))
+        self.mqtt_pass_entry.grid(row=4, column=1, padx=5, pady=(0, 20), sticky="w")
         button_frame = ctk.CTkFrame(self.frame_mqtt, fg_color="transparent")
-        button_frame.pack(pady=(10, 20))
-        ctk.CTkButton(
-            button_frame, text="Quay Lại", width=120, height=40, font=("Segoe UI", 16),
-            fg_color="#6c757d", hover_color="#5a6268", text_color="white", command=self.go_back
-        ).pack(side="left", padx=10)
-        ctk.CTkButton(
-            button_frame, text="Lưu & Kết Nối", width=150, height=40, font=("Segoe UI", 16, "bold"),
-            fg_color="#4f918b", hover_color="#427b75", text_color="white", command=self.validate_and_save_connect
-        ).pack(side="right", padx=10)
-        self.server_entry.focus()
-        # Bind Enter key
-        self.server_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
-        self.port_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
-        self.mqtt_user_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
-        self.mqtt_pass_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
+        button_frame.grid(row=5, column=0, columnspan=2, pady=(10, 20))
+        ctk.CTkButton(button_frame, text="TRỞ VỀ", width=120, height=40, font=("Segoe UI", 16),
+                     fg_color="#6c757d", hover_color="#5a6268", text_color="white", command=self.go_back).pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="KẾT NỐI", width=150, height=40, font=("Segoe UI", 16, "bold"),
+                     fg_color="#4f918b", hover_color="#427b75", text_color="white", command=self.validate_and_save_connect).pack(side="right", padx=10)
+        #self.server_entry.focus()
+        # self.server_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
+        # self.port_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
+        # self.mqtt_user_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
+        # self.mqtt_pass_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
+
 
     def validate_and_save_connect(self):
         broker = self.server_entry.get().strip()
@@ -538,9 +509,9 @@ class App:
 
         # Options definition (3 tùy chọn)
         options = [
-            (self.face_img, "Khuôn Mặt", self.show_face_recognition_screen),
-            (self.fingerprint_img, "Vân Tay", self.start_fingerprint_scan),
-            (self.idcard_img, "Thẻ CCCD", self.start_id_card_scan),
+            (self.face_img, "KHUÔN MẶT", self.show_face_recognition_screen),
+            (self.fingerprint_img, "VÂN TAY", self.start_fingerprint_scan),
+            (self.idcard_img, "THẺ CCCD", self.start_id_card_scan),
         ]
 
         # --- THAY ĐỔI LAYOUT ---
