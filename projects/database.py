@@ -114,6 +114,18 @@ def process_biometric_push(data, mac_address, finger_position=None):
         # Insert or Update the record based on bio_id, including finger_position
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
+            if processed_finger_position is not None:
+                cursor.execute(
+                    "SELECT bio_id FROM embeddings WHERE finger_position = ?", 
+                    (processed_finger_position,)
+                )
+                row = cursor.fetchone()
+                if row and row[0] != bio_id:
+                    # slot taken, find next free
+                    from database import find_next_available_finger_position
+                    new_pos = find_next_available_finger_position()
+                    print(f"[DB] Position {processed_finger_position} taken, using {new_pos}")
+                    processed_finger_position = new_pos
             cursor.execute("""
                 INSERT INTO embeddings (
                     bio_id, id_number, person_name, mac_address,
