@@ -49,7 +49,7 @@ PAD_Y = 15
 CONFIG_FILE = "mqtt_config.json"
 FACE_RECOGNITION_TIMEOUT_MS = 5000
 DOOR_OPEN_DURATION_MS = 10000
-HEALTHCHECK_INTERVAL_MS = 30000
+HEALTHCHECK_INTERVAL_MS = 10000
 GUEST_CLEANUP_INTERVAL_MS = 3600000 # Currently unused placeholder interval
 
 # Fingerprint Sensor Configuration (adjust as needed)
@@ -133,8 +133,8 @@ class App:
         self.mqtt_user_entry = None
         self.mqtt_pass_entry = None
 
-        self.connected_image = load_image("images/connected.png", (40, 40))
-        self.disconnected_image = load_image("images/disconnected.png", (40, 40))
+        self.connected_image = load_image("images/connected.jpg", (40, 40))
+        self.disconnected_image = load_image("images/disconnected.jpg", (40, 40))
         self.bg_photo = load_image("images/background.jpeg", (1024, 600))
         self.face_img = load_image("images/face.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))
         self.fingerprint_img = load_image("images/fingerprint.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))

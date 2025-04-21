@@ -87,7 +87,7 @@ def set_prompt_state(fp_frame, cancel_callback):
     ctk_img_grey = ctk.CTkImage(light_image=img_grey, dark_image=img_grey, size=(1024, 600)) # Adjust size
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_img_grey, text="")
     icon_label.image = ctk_img_grey
-    icon_label.pack(pady=(10, 10), expand=True, fill="both")
+    icon_label.pack(pady=(0, 0), expand=True, fill="both")
 
     text_label = ctk.CTkLabel(fp_frame, text="Đặt ngón tay lên cảm biến", font=ctk.CTkFont(size=16, weight="bold"), text_color="white")
     text_label.pack(pady=(0, 20))
@@ -225,7 +225,7 @@ def perform_fingerprint_verification(fp_frame, sensor, cancel_flag, on_success_c
                 # Update UI to scanning state (if frame still exists)
                 if fp_frame.winfo_exists():
                     # Use the cancel callback associated with the scanning state
-                    fp_frame.after(2000, lambda: set_scanning_state(fp_frame, cancel_callback=lambda: (cancel_flag.update({"cancel": True}), fp_frame.destroy() if fp_frame.winfo_exists() else None)))
+                    fp_frame.after(0, lambda: set_scanning_state(fp_frame, cancel_callback=lambda: (cancel_flag.update({"cancel": True}), fp_frame.destroy() if fp_frame.winfo_exists() else None)))
 
                 try:
                     # Convert image in buffer 1
@@ -251,31 +251,31 @@ def perform_fingerprint_verification(fp_frame, sensor, cancel_flag, on_success_c
                                 else:
                                     print(f"[WARN] Fingerprint match for {user_info['bio_id']}, but user is not currently valid (time/date/day).")
                                     if fp_frame.winfo_exists():
-                                        fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "Vân tay đúng, nhưng không hợp lệ", on_close=on_failure_callback))
+                                        fp_frame.after(2000, lambda: update_fp_frame_with_failure(fp_frame, "Vân tay đúng, nhưng không hợp lệ", on_close=on_failure_callback))
                                     return # Failure (invalid), exit thread
                             else:
                                 print(f"[ERROR] Sensor found match at position {position}, but no user found in DB for this position!")
                                 # This indicates a sync issue between sensor and DB
                                 if fp_frame.winfo_exists():
-                                    fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "Lỗi dữ liệu người dùng", on_close=on_failure_callback))
+                                    fp_frame.after(1500, lambda: update_fp_frame_with_failure(fp_frame, "Lỗi dữ liệu người dùng", on_close=on_failure_callback))
                                 return # Failure (DB error), exit thread
                         else:
                             # No match found by sensor
                             print("[INFO] No matching fingerprint found by sensor.")
                             if fp_frame.winfo_exists():
-                                fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "Vân tay không khớp", on_close=on_failure_callback))
+                                fp_frame.after(2000, lambda: update_fp_frame_with_failure(fp_frame, "Vân tay không khớp", on_close=on_failure_callback))
                             return # Failure (no match), exit thread
 
                     else:
                         print("[ERROR] Failed to convert fingerprint image on sensor.")
                         if fp_frame.winfo_exists():
-                             fp_frame.after(0, lambda: update_fp_frame_with_error(fp_frame, "Lỗi xử lý ảnh vân tay", on_close=on_failure_callback))
+                             fp_frame.after(2000, lambda: update_fp_frame_with_error(fp_frame, "Lỗi xử lý ảnh vân tay", on_close=on_failure_callback))
                         return # Exit thread on sensor processing error
 
                 except Exception as e:
                     print(f"[ERROR] Exception during fingerprint search/processing: {e}")
                     if fp_frame.winfo_exists():
-                         fp_frame.after(0, lambda: update_fp_frame_with_error(fp_frame, "Lỗi xử lý vân tay", on_close=on_failure_callback))
+                         fp_frame.after(1000, lambda: update_fp_frame_with_error(fp_frame, "Lỗi xử lý vân tay", on_close=on_failure_callback))
                     return # Exit thread on error
 
             # Small delay to prevent busy-waiting

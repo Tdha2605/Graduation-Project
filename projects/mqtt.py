@@ -295,7 +295,6 @@ class MQTTManager:
                                              print(f"[INFO] Attempting to store fingerprint for bioId {bio_id} using auto-position...")
                                              if self.fingerprint_sensor.uploadCharacteristics(FINGERPRINT_CHARBUFFER1, template_list):
                                                  actual_position = self.fingerprint_sensor.storeTemplate(FINGERPRINT_CHARBUFFER1)
-                                                 
                                                  if actual_position >= 0:
                                                      print(f"[INFO] Fingerprint for bioId {bio_id} stored successfully by sensor at position {actual_position}.")
                                                      finger_position_for_db = actual_position
