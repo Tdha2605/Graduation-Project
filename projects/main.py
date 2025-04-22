@@ -139,14 +139,23 @@ class App:
         self.face_img = load_image("images/face.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))
         self.fingerprint_img = load_image("images/fingerprint.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))
         self.idcard_img = load_image("images/id_card.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))
-        self.sync_img = load_image("images/sync.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80)) # Assuming sync image exists
+        self.sync_img = load_image("images/sync.png", (30, 30)) 
 
         self.root.configure(fg_color=BG_COLOR)
         self.show_background()
         self.connection_status_label = ctk.CTkLabel(root, image=self.disconnected_image, text="")
         self.connection_status_label.place(relx=0.01, rely=0.93, anchor="sw")
         self.create_config_button()
-
+        self.sync_button = ctk.CTkButton(
+            self.root,
+            image=self.sync_img,
+            text="",              # icon‑only
+            width=30, height=30,
+            fg_color="transparent",
+            hover_color="#E0E0E0",
+            command=self.request_manual_sync
+        )
+        self.sync_button.place(relx=0.05, rely=0.07, anchor="se")
         self.initialize_fingerprint_sensor() # Attempt to initialize sensor
 
         config_path = os.path.join(script_dir, CONFIG_FILE)
@@ -328,6 +337,7 @@ class App:
             if self.connection_status_label and self.connection_status_label.winfo_exists():
                  self.connection_status_label.lift()
             self.create_config_button() # Ensure config button is always visible
+            
 
     def push_screen(self, screen_id, screen_func, *args):
         # Allow passing args to screen build function

@@ -36,7 +36,7 @@ MQTT_REGISTER_TOPIC = "iot/devices/register_device"
 MQTT_REGISTER_RESPONSE_TOPIC = "iot/server/register_device_resp"
 MQTT_HEALTHCHECK_TOPIC = "iot/devices/healthcheck"
 MQTT_RECOGNITION_FACE_TOPIC = "iot/devices/recognition_face"
-MQTT_SYNC_REQUEST_TOPIC = "iot/devices/request_sync"
+MQTT_SYNC_REQUEST_TOPIC = "iot/devices/device_sync_bio"
 MQTT_BIO_ACK_TOPIC = "iot/devices/device_received_bio"
 
 MQTT_PUSH_BIOMETRIC_TOPIC_TEMPLATE = "iot/server/{mac_address}/push_biometric"
@@ -294,7 +294,7 @@ class MQTTManager:
                                          if self.fingerprint_sensor.verifyPassword():
                                              print(f"[INFO] Attempting to store fingerprint for bioId {bio_id} using auto-position...")
                                              if self.fingerprint_sensor.uploadCharacteristics(FINGERPRINT_CHARBUFFER1, template_list):
-                                                 actual_position = self.fingerprint_sensor.storeTemplate(FINGERPRINT_CHARBUFFER1)
+                                                 actual_position = self.fingerprint_sensor.storeTemplate()
                                                  if actual_position >= 0:
                                                      print(f"[INFO] Fingerprint for bioId {bio_id} stored successfully by sensor at position {actual_position}.")
                                                      finger_position_for_db = actual_position

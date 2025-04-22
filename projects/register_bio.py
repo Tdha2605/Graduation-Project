@@ -2,7 +2,7 @@ import os
 import json
 import base64
 import time
-from datetime import datetime
+from datetime import datetime, date, time as dt_time, timedelta
 from uuid import uuid4
 
 import numpy as np
@@ -13,13 +13,13 @@ from tkinter import messagebox
 import paho.mqtt.client as mqtt
 from dotenv import load_dotenv
 
-# Load environment
-load_dotenv()
-
 # Fingerprint sensor
 from pyfingerprint.pyfingerprint import PyFingerprint, FINGERPRINT_CHARBUFFER1, FINGERPRINT_CHARBUFFER2
 # Face recognition
 from insightface.app import FaceAnalysis
+
+# Load environment
+load_dotenv()
 
 # MQTT settings
 MQTT_BROKER = os.getenv("MQTT_BROKER", "p06299ce.ala.eu-central-1.emqxsl.com")
@@ -52,8 +52,8 @@ class MQTTPublisher:
         print("[DEBUG] MQTT disconnected")
 
 # Utilities
-
 def capture_image():
+    # Raspberry Pi camera capture
     picam2 = Picamera2()
     cfg = picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
     picam2.configure(cfg)
@@ -63,10 +63,8 @@ def capture_image():
     picam2.close()
     return frame
 
-
 def encode_embedding(emb: np.ndarray) -> str:
     return base64.b64encode(emb.astype(np.float32).tobytes()).decode()
-
 
 def encode_image_b64(img: np.ndarray) -> str:
     ok, buf = cv2.imencode('.jpg', img)
@@ -98,14 +96,14 @@ class RegistrationWizard(ctk.CTk):
         self.mqtt = MQTTPublisher(MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASS)
 
         # State
-        self.selection = {}      # {(day, timeslot): Button}
-        self.face_emb = None
-        self.face_b64 = None
-        self.finger_b64 = None
-        self.finger_position = None
+        self.selection      = {}      # {(day, timeslot): Button}
+        self.face_emb       = None
+        self.face_b64       = None
+        self.finger_b64     = None
+        self.finger_position= None
 
         # Wizard setup
-        self.tab_names = ["1.Chọn khung giờ", "2.Đăng ký", "3.Xác nhận"]
+        self.tab_names = ["1. Chọn khung giờ", "2. Đăng ký", "3. Xác nhận"]
         self.tabs = ctk.CTkTabview(self, width=1000, height=520)
         self.tabs.pack(padx=12, pady=(12,0))
         for name in self.tab_names:
@@ -128,7 +126,7 @@ class RegistrationWizard(ctk.CTk):
     def _build_step1(self):
         f = self.tabs.tab(self.tab_names[0])
         days = ["T2","T3","T4","T5","T6","T7","CN"]
-        # Timeslots: 07:00–17:30 every 45 minutes
+        # Timeslots 07:00–17:30 every 45 minutes
         timeslots = []
         h, m = 7, 0
         while True:
@@ -160,15 +158,21 @@ class RegistrationWizard(ctk.CTk):
 
     def _build_step2(self):
         f = self.tabs.tab(self.tab_names[1])
-        ctk.CTkLabel(f, text="Chọn phương thức", font=(None,18)).place(x=50,y=20)
-        # Enroll face
-        ctk.CTkButton(f, text="Enroll Face", width=200, command=self._enroll_face).place(x=50,y=80)
+        # Input name and CCCD
+        ctk.CTkLabel(f, text="Họ Tên:", font=(None,16)).place(x=50, y=20)
+        self.entry_name = ctk.CTkEntry(f, width=300)
+        self.entry_name.place(x=150, y=20)
+        ctk.CTkLabel(f, text="CCCD:", font=(None,16)).place(x=50, y=60)
+        self.entry_cccd = ctk.CTkEntry(f, width=300)
+        self.entry_cccd.place(x=150, y=60)
+        # Enrollment methods
+        ctk.CTkLabel(f, text="Chọn phương thức", font=(None,18)).place(x=50, y=110)
+        ctk.CTkButton(f, text="Enroll Face", width=200, command=self._enroll_face).place(x=50, y=150)
         self.face_status = ctk.CTkLabel(f, text="[ ]", font=(None,16))
-        self.face_status.place(x=270,y=85)
-        # Enroll finger
-        ctk.CTkButton(f, text="Enroll Finger", width=200, command=self._enroll_finger).place(x=50,y=140)
+        self.face_status.place(x=270, y=155)
+        ctk.CTkButton(f, text="Enroll Finger", width=200, command=self._enroll_finger).place(x=50, y=210)
         self.finger_status = ctk.CTkLabel(f, text="[ ]", font=(None,16))
-        self.finger_status.place(x=270,y=145)
+        self.finger_status.place(x=270, y=215)
 
     def _build_step3(self):
         f = self.tabs.tab(self.tab_names[2])
@@ -210,26 +214,24 @@ class RegistrationWizard(ctk.CTk):
 
     def _enroll_finger(self):
         if not self.fsensor:
-            messagebox.showerror("Finger","Sensor vân tay không khả dụng.")
+            messagebox.showerror("Fingerprint","Sensor vân tay không khả dụng.")
             return
         s = self.fsensor
         try:
-            messagebox.showinfo("Finger","Scan lần 1")
+            messagebox.showinfo("Fingerprint","Scan lần 1")
             if not s.readImage(): raise RuntimeError("Quét lần 1 thất bại")
             s.convertImage(FINGERPRINT_CHARBUFFER1)
-            messagebox.showinfo("Finger","Scan lần 2")
+            messagebox.showinfo("Fingerprint","Scan lần 2")
             time.sleep(1)
             if not s.readImage(): raise RuntimeError("Quét lần 2 thất bại")
             s.convertImage(FINGERPRINT_CHARBUFFER2)
             s.createTemplate()
             print("[DEBUG] Templates merged into buffer1")
-            # Store on sensor
             pos = s.storeTemplate()
             if pos < 0:
                 raise RuntimeError(f"Lưu mẫu vân tay thất bại: {pos}")
             self.finger_position = pos
             print(f"[DEBUG] Stored at position {pos}")
-            # Reload from sensor
             if not s.loadTemplate(pos, FINGERPRINT_CHARBUFFER1):
                 raise RuntimeError("Tải lại mẫu thất bại")
             chars = s.downloadCharacteristics(FINGERPRINT_CHARBUFFER1)
@@ -237,7 +239,7 @@ class RegistrationWizard(ctk.CTk):
             self.finger_status.configure(text="[X]")
             print("[DEBUG] Finger enrolled and stored")
         except Exception as e:
-            messagebox.showerror("Finger",str(e))
+            messagebox.showerror("Fingerprint", str(e))
             print(f"[ERROR] {e}")
 
     def _refresh_summary(self):
@@ -248,35 +250,56 @@ class RegistrationWizard(ctk.CTk):
         self.summary.insert("end",f"Finger: {bool(self.finger_b64)}\n")
 
     def _submit(self):
-        slots = [(d,t) for (d,t), btn in self.selection.items() if getattr(btn,'selected',False)]
+        slots = [(d,t) for (d,t),btn in self.selection.items() if getattr(btn,'selected',False)]
         if not slots:
             messagebox.showerror("Lỗi","Chưa chọn khung giờ")
             self.current=0; self._update_nav(); return
         if not self.face_b64 and not self.finger_b64:
             messagebox.showerror("Lỗi","Chưa enroll face hoặc finger")
             self.current=1; self._update_nav(); return
-        bio_id = str(uuid4())
+
+        bio_id       = str(uuid4())
+        person_name  = self.entry_name.get().strip()
+        id_number    = self.entry_cccd.get().strip()
+
+        # Dates
+        from_date = date.today().isoformat()
+        to_date   = from_date
+
+        # Times
+        times = sorted(datetime.strptime(t, "%H:%M") for (d,t) in slots)
+        from_time = times[0].strftime("%H:%M:%S")
+        end_dt    = times[-1] + timedelta(minutes=45)
+        to_time   = end_dt.strftime("%H:%M:%S")
+
+        # Active days mask
+        day_order = ["T2","T3","T4","T5","T6","T7","CN"]
+        sel_days  = {d for (d,_) in slots}
+        active_days = "".join("1" if d in sel_days else "0" for d in day_order)
+
         bio_datas = []
         if self.face_b64:
             bio_datas.append({"BioType":"FACE","Template":encode_embedding(self.face_emb),"Img":self.face_b64})
         if self.finger_b64:
             bio_datas.append({"BioType":"FINGER","Template":self.finger_b64,"Img":""})
-        now = datetime.now().strftime("%Y-%m-%d")
+
         cmd = {
-            "bioId":bio_id,
-            "idNumber":"",
-            "cmdType":"PUSH_NEW_BIO",
-            "bioDatas":bio_datas,
-            "fromDate":now,
-            "toDate":now,
-            "fromTime":"00:00:00",
-            "toTime":"23:59:59",
-            "activeDays":"1111110"
+            "bioId":        bio_id,
+            "personName":   person_name,
+            "idNumber":     id_number,
+            "cmdType":      "PUSH_NEW_BIO",
+            "bioDatas":     bio_datas,
+            "fromDate":     from_date,
+            "toDate":       to_date,
+            "fromTime":     from_time,
+            "toTime":       to_time,
+            "activeDays":   active_days
         }
-        mac = "D8:3A:DD:51:09:02"
-        self.mqtt.push_biometric(mac,[cmd])
+
+        mac = "D8:3A:DD:51:09:02"   # replace with your device MAC
+        self.mqtt.push_biometric(mac, [cmd])
         messagebox.showinfo("Hoàn tất","Đã gửi dữ liệu đăng ký")
-        print("[DEBUG] Cmd:",cmd)
+        print("[DEBUG] Cmd:", cmd)
         self.destroy()
 
 if __name__ == "__main__":
