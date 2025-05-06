@@ -1,29 +1,70 @@
-Đồ án tập trung vào việc xây dựng hệ thống quản lý vào ra cho các phòng trong
-tòa nhà, sử dụng thiết bị nền tảng là Raspberry Pi 4 tích hợp camera, cảm biến và
-khóa điện tử. Hệ thống hỗ trợ nhận diện khuôn mặt và xác thực vân tay nhằm tăng
-cường bảo mật và thuận tiện trong việc kiểm soát truy cập.
-Hệ thống được chia thành ba phần chính, phối hợp chặt chẽ với nhau để đảm bảo
-quá trình đăng ký, nhận diện và quản lý truy cập diễn ra hiệu quả:
-Thiết bị đăng ký sinh trắc học: Đây là thiết bị chuyên dùng cho việc thu thập dữ
-liệu sinh trắc học từ người dùng, bao gồm khuôn mặt và dấu vân tay. Thiết bị được
-tích hợp camera chất lượng cao và cảm biến vân tay AS608, cho phép chụp ảnh
-chân dung và ghi nhận mẫu vân tay với độ chính xác cao. Sau khi thu thập, dữ liệu
-sinh trắc được xử lý sơ bộ và gửi lên server để lưu trữ vào cơ sở dữ liệu nhận diện,
-phục vụ cho các bước xác thực sau này.
-Thiết bị nhận diện sinh trắc học: Đây là các thiết bị được lắp đặt tại các cửa ra
-vào của tòa nhà, thực hiện nhiệm vụ xác thực người dùng. Thiết bị sử dụng camera
-để nhận diện khuôn mặt và cảm biến vân tay để xác thực dấu vân tay. Nếu dữ liệu
-sinh trắc khớp với thông tin trong cơ sở dữ liệu server, thiết bị sẽ điều khiển khóa
-điện từ để mở cửa, đồng thời ghi lại sự kiện truy cập và gửi thông tin về server. Các
-thiết bị cũng liên tục theo dõi trạng thái cửa, phát hiện hành vi bất thường như mở
-cửa quá thời gian quy định hoặc tác động vật lý lên thiết bị.
-Server trung tâm: Server đóng vai trò là bộ não của hệ thống, tiếp nhận và lưu trữ
-toàn bộ dữ liệu sinh trắc học, sự kiện ra vào, cũng như trạng thái thiết bị. Server
-vận hành giao tiếp với các thiết bị thông qua giao thức MQTT, đảm nhiệm việc
-phân phối dữ liệu nhận diện, gửi lệnh điều khiển mở cửa hoặc cập nhật danh sách
-người dùng mới. Ngoài ra, server còn đảm bảo tính toàn vẹn dữ liệu, hỗ trợ giám
-sát thời gian thực và phân tích lịch sử truy cập khi cần thiết.
-Đồ án không chỉ giúp sinh viên củng cố kiến thức về IoT, xử lý ảnh và giao tiếp
-MQTT, mà còn rèn luyện kỹ năng thiết kế hệ thống thực tế, từ phần cứng đến phần
-mềm, góp phần nâng cao khả năng tích hợp và phát triển các ứng dụng thông minh
-trong thực tiễn
+# Hệ Thống Quản Lý Vào Ra Dựa Trên Nhận Diện Sinh Trắc Học
+
+## Giới thiệu
+
+Dự án tập trung vào việc xây dựng **hệ thống kiểm soát truy cập cho các phòng trong tòa nhà**, sử dụng thiết bị nền tảng là **Raspberry Pi 4** tích hợp camera, cảm biến và khóa điện tử. Hệ thống hỗ trợ **nhận diện khuôn mặt** và **xác thực vân tay**, nhằm tăng cường bảo mật và đem lại sự tiện lợi trong việc quản lý vào ra.
+
+Hệ thống bao gồm **ba thành phần chính** phối hợp chặt chẽ với nhau để đảm bảo quy trình **đăng ký, nhận diện và quản lý truy cập** diễn ra hiệu quả.
+
+---
+
+## Cấu Trúc Hệ Thống
+
+### 1. Thiết Bị Đăng Ký Sinh Trắc Học
+
+- Thu thập dữ liệu sinh trắc học từ người dùng:
+  - **Khuôn mặt** (qua camera chất lượng cao).
+  - **Dấu vân tay** (qua cảm biến AS608).
+- Dữ liệu sau khi thu thập được **xử lý sơ bộ** và gửi lên server để lưu trữ.
+- Phục vụ cho bước xác thực tại các thiết bị kiểm soát ra vào.
+
+### 2. Thiết Bị Nhận Diện Sinh Trắc Học
+
+- Lắp đặt tại **các cửa ra vào** trong tòa nhà.
+- Chức năng chính:
+  - Nhận diện khuôn mặt.
+  - Xác thực dấu vân tay.
+  - So khớp dữ liệu sinh trắc với cơ sở dữ liệu từ server.
+  - Điều khiển **khóa điện tử** để mở cửa khi xác thực thành công.
+  - Gửi **thông tin truy cập** về server.
+- Tích hợp chức năng:
+  - **Giám sát trạng thái cửa**.
+  - Phát hiện bất thường như: mở cửa quá thời gian, rung lắc thiết bị.
+
+### 3. Server Trung Tâm
+
+- Đóng vai trò là **bộ não điều phối** của hệ thống.
+- Chức năng chính:
+  - Lưu trữ toàn bộ dữ liệu sinh trắc và sự kiện truy cập.
+  - Giao tiếp với các thiết bị qua giao thức **MQTT**.
+  - Gửi lệnh điều khiển (mở cửa, cập nhật người dùng).
+  - Hỗ trợ giám sát **realtime**, phân tích **lịch sử truy cập**.
+  - Đảm bảo **tính toàn vẹn dữ liệu** và an ninh hệ thống.
+
+---
+
+## Công Nghệ Sử Dụng
+
+- **Raspberry Pi 4**, Camera Module, Cảm biến vân tay AS608, khóa điện từ.
+- **Python**, **FastAPI**, **MQTT (EMQX)**.
+- **Node.js backend**, **MongoDB / PostgreSQL**.
+- **MQTT protocol** để truyền thông giữa thiết bị và server.
+- **Nhận diện khuôn mặt** sử dụng mô hình AI (ví dụ: InsightFace).
+- **Giao diện người dùng** để đăng ký sinh trắc học và giám sát trạng thái hệ thống.
+
+---
+
+## Mục Tiêu & Ý Nghĩa
+
+Dự án không chỉ giúp sinh viên:
+
+- Củng cố kiến thức về **Internet of Things**, **xử lý ảnh**, và **giao tiếp MQTT**.
+- Rèn luyện kỹ năng thiết kế và triển khai hệ thống **thực tế từ phần cứng đến phần mềm**.
+- Phát triển khả năng tích hợp và ứng dụng các giải pháp **AI và IoT** vào đời sống.
+
+---
+
+## Tác Giả
+
+> Sinh viên thực hiện trong khuôn khổ đồ án tốt nghiệp tại [Tên Trường / Khoa].
+
