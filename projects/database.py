@@ -1,13 +1,14 @@
 # database.py
 import sqlite3
 import numpy as np
-from datetime import datetime, timezone, time as dt_time, date as dt_date
+from datetime import datetime, timezone,timedelta, time as dt_time, date as dt_date
 import os
 import base64
 import json # Needed if storing complex data as JSON
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(script_dir, "access_control.db")
+VN_TZ = timezone(timedelta(hours=7)) 
 
 # --- Database Initialization ---
 def initialize_database():
@@ -43,6 +44,20 @@ def initialize_database():
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_dates ON embeddings (valid_from_date, valid_to_date)")
             # Add index for finger_position if frequent lookups are needed
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_embeddings_finger_pos ON embeddings (finger_position)")
+            
+                # outbox table for queued MQTT publishes
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS outbox (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topic      TEXT    NOT NULL,
+                    payload    TEXT    NOT NULL,
+                    qos        INTEGER NOT NULL DEFAULT 0,
+                    properties TEXT    DEFAULT NULL,      -- JSON-encoded list of UserProperty tuples
+                    timestamp  DATETIME NOT NULL DEFAULT (DATETIME('now')),
+                    sent       INTEGER NOT NULL DEFAULT 0  -- 0 = pending, 1 = sent
+               )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_outbox_sent ON outbox (sent)")
             conn.commit()
             print("[DB] Database schema initialized/updated with finger_position.")
     except sqlite3.Error as e:
@@ -60,6 +75,7 @@ def process_biometric_push(data, mac_address, finger_position=None):
     try:
         bio_id = data.get('bioId')
         id_number = data.get('idNumber')
+        person_name = data.get('personName')
         bio_datas = data.get('bioDatas', [])
         from_date_str = data.get('fromDate') # Expect YYYY-MM-DD
         to_date_str = data.get('toDate')     # Expect YYYY-MM-DD
@@ -72,7 +88,7 @@ def process_biometric_push(data, mac_address, finger_position=None):
             return False
 
         # Use idNumber or bioId as person_name if not explicitly provided elsewhere
-        person_name = id_number if id_number else bio_id
+        #person_name = id_number if id_number else bio_id
 
         face_template_blob = None
         face_image_b64 = None
@@ -211,7 +227,7 @@ def get_active_embeddings(mac_address):
     """
     results = []
     try:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(VN_TZ)
         current_date_str = now.strftime('%Y-%m-%d')
         current_time_str = now.strftime('%H:%M:%S')
         # Python's weekday(): Monday is 0 and Sunday is 6
@@ -418,3 +434,32 @@ def delete_expired_guests():
 # Alias for clarity if needed elsewhere
 def delete_records_by_bio_id(bio_id):
      return delete_embedding_by_bio_id(bio_id)
+
+
+def enqueue_outgoing_message(topic: str, payload: str, qos: int = 0, properties: list[tuple[str,str]] | None = None):
+    """Store an MQTT message (and its UserProperty) to send later."""
+    props_json = json.dumps(properties) if properties else None
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute(
+            "INSERT INTO outbox (topic, payload, qos, properties) VALUES (?, ?, ?, ?)",
+            (topic, payload, qos, props_json)
+        )
+        conn.commit()
+
+def get_pending_outbox():
+    """
+    Return list of pending messages:
+      (id, topic, payload, qos, properties_json)
+    """
+    with sqlite3.connect(DB_FILE) as conn:
+        cur = conn.execute(
+            "SELECT id, topic, payload, qos, properties FROM outbox WHERE sent = 0 ORDER BY id"
+        )
+        return cur.fetchall()
+
+
+def mark_outbox_sent(entry_id):
+    """Mark a queued message as sent."""
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("UPDATE outbox SET sent = 1 WHERE id = ?", (entry_id,))
+        conn.commit()

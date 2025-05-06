@@ -3,11 +3,19 @@ import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
 os.chdir(script_dir)
 
+try:
+    import RPi.GPIO as GPIO
+    GPIO_AVAILABLE = True
+except ImportError:
+    GPIO_AVAILABLE = False
+except RuntimeError:
+    GPIO_AVAILABLE = False
+
 from dotenv import load_dotenv
 import json
 import uuid
 import customtkinter as ctk
-from tkinter import messagebox, ttk # Added ttk for potential Treeview later
+from tkinter import messagebox, ttk
 from PIL import Image
 from customtkinter import CTkImage
 from datetime import datetime, timezone, time as dt_time
@@ -15,24 +23,21 @@ import threading
 import io
 import base64
 import time
-# Import device interaction modules
+
 import face
-import id_card # Assuming exists and has open_id_card_recognition
-import fingerprint # Uses updated fingerprint module
+import id_card
+import fingerprint # Đảm bảo fingerprint.py cũng đã sửa lỗi tương tự
 from door import Door
 from mqtt import MQTTManager
-import paho.mqtt.client as mqtt
-import database # Use updated database module
-# Import fingerprint sensor library
+import paho.mqtt.client as mqtt_paho #Đã đổi tên mqtt
+import database
+
 try:
     from pyfingerprint.pyfingerprint import PyFingerprint
 except ImportError:
-    print("[ERROR] PyFingerprint library not found. Fingerprint functionality disabled.")
     PyFingerprint = None
-except Exception as e:
-    print(f"[ERROR] Failed to import PyFingerprint: {e}. Fingerprint functionality disabled.")
+except Exception:
     PyFingerprint = None
-
 
 load_dotenv()
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
@@ -50,11 +55,17 @@ CONFIG_FILE = "mqtt_config.json"
 FACE_RECOGNITION_TIMEOUT_MS = 5000
 DOOR_OPEN_DURATION_MS = 10000
 HEALTHCHECK_INTERVAL_MS = 10000
-GUEST_CLEANUP_INTERVAL_MS = 3600000 # Currently unused placeholder interval
+GUEST_CLEANUP_INTERVAL_MS = 3600000
 
-# Fingerprint Sensor Configuration (adjust as needed)
 FINGERPRINT_PORT = '/dev/ttyAMA0'
 FINGERPRINT_BAUDRATE = 57600
+
+DOOR_SENSOR_PIN = 17
+DOOR_RELAY_PIN = 27
+SOS_BUTTON_PIN = 5
+OPEN_BUTTON_PIN = 13
+BUZZER_PIN = 26
+BUTTON_DEBOUNCE_TIME = 300
 
 def get_mac_address():
     mac = uuid.getnode()
@@ -65,17 +76,17 @@ def load_image(path, size):
     try:
         full_path = os.path.join(script_dir, path)
         if not os.path.exists(full_path):
-            print(f"[WARN] Image file not found: {full_path}")
+            if DEBUG: print(f"[MAIN WARN] Image file not found: {full_path}")
             return None
         img = Image.open(full_path)
         if size:
             img = img.resize(size, Image.Resampling.LANCZOS)
         return CTkImage(light_image=img, dark_image=img, size=img.size)
     except Exception as e:
-        if DEBUG: print(f"[DEBUG] Error loading image {path}: {e}")
+        if DEBUG: print(f"[MAIN ERROR] Error loading image {path}: {e}")
         return None
 
-def get_ctk_image_from_db(user_id, size=None): # user_id is bio_id
+def get_ctk_image_from_db(user_id, size=None):
     base64_str = database.retrieve_bio_image_by_user_id(user_id)
     if base64_str:
         try:
@@ -85,16 +96,15 @@ def get_ctk_image_from_db(user_id, size=None): # user_id is bio_id
             if size:
                 pil_image = pil_image.resize(size, Image.Resampling.LANCZOS)
             img_size = pil_image.size
-            # Ensure size from parameter is used if valid
             if isinstance(size, tuple) and len(size) == 2:
                 img_size=size
             ctk_img = CTkImage(light_image=pil_image, dark_image=pil_image, size=img_size)
             return ctk_img
         except base64.binascii.Error:
-            print(f"Error decoding Base64 image for bio_id {user_id}.")
+            if DEBUG: print(f"[MAIN ERROR] Error decoding Base64 image for bio_id {user_id}.")
             return None
         except Exception as e:
-            print(f"Error processing image for bio_id {user_id}: {e}")
+            if DEBUG: print(f"[MAIN ERROR] Error processing image for bio_id {user_id}: {e}")
             return None
     else:
         return None
@@ -103,7 +113,7 @@ class App:
     def __init__(self, root):
         self.root = root
         self.mac = get_mac_address()
-        if DEBUG: print("[DEBUG] MAC Address:", self.mac)
+        if DEBUG: print("[MAIN DEBUG] MAC Address:", self.mac)
 
         try:
             database.initialize_database()
@@ -116,8 +126,8 @@ class App:
         self.mqtt_manager = None
         self.mqtt_config = {}
         self.screen_history = []
-        self.door_sensor = None
-        self.fingerprint_sensor = None # Initialize fingerprint sensor attribute
+        self.door_sensor_handler = None
+        self.fingerprint_sensor = None
         self.connection_status_label = None
         self.frame_mqtt = None
         self.frame_menu = None
@@ -130,8 +140,13 @@ class App:
         self.admin_pass_entry = None
         self.server_entry = None
         self.port_entry = None
-        self.mqtt_user_entry = None
-        self.mqtt_pass_entry = None
+        self.domain_entry = None
+        self.http_port_entry = None
+
+        self.last_sos_button_state = GPIO.HIGH if GPIO_AVAILABLE else None
+        self.last_open_button_state = GPIO.HIGH if GPIO_AVAILABLE else None
+        self.open_button_press_time = None
+        self.open_door_timer = None
 
         self.connected_image = load_image("images/connected.jpg", (40, 40))
         self.disconnected_image = load_image("images/disconnected.jpg", (40, 40))
@@ -139,84 +154,97 @@ class App:
         self.face_img = load_image("images/face.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))
         self.fingerprint_img = load_image("images/fingerprint.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))
         self.idcard_img = load_image("images/id_card.png", (BUTTON_WIDTH-50, BUTTON_HEIGHT-80))
-        self.sync_img = load_image("images/sync.png", (30, 30)) 
+        self.sync_img = load_image("images/sync.png", (30, 30))
 
         self.root.configure(fg_color=BG_COLOR)
         self.show_background()
         self.connection_status_label = ctk.CTkLabel(root, image=self.disconnected_image, text="")
-        self.connection_status_label.place(relx=0.01, rely=0.93, anchor="sw")
+        self.connection_status_label.place(relx=0.01, rely=0.95, anchor="sw")
         self.create_config_button()
-        self.sync_button = ctk.CTkButton(
-            self.root,
-            image=self.sync_img,
-            text="",              # icon‑only
-            width=30, height=30,
-            fg_color="transparent",
-            hover_color="#E0E0E0",
-            command=self.request_manual_sync
-        )
+        self.sync_button = ctk.CTkButton(self.root, image=self.sync_img, text="", width=35, height=35, fg_color="transparent", hover_color="#E0E0E0", command=self.request_manual_sync)
         self.sync_button.place(relx=0.05, rely=0.07, anchor="se")
-        self.initialize_fingerprint_sensor() # Attempt to initialize sensor
+        self.initialize_fingerprint_sensor()
+
+        if GPIO_AVAILABLE:
+            self.setup_gpio_components()
 
         config_path = os.path.join(script_dir, CONFIG_FILE)
         if os.path.exists(config_path):
             try:
                 with open(config_path, "r") as f:
                     self.mqtt_config = json.load(f)
-                if DEBUG: print("[DEBUG] MQTT config loaded:", self.mqtt_config)
+                if DEBUG: print("[MAIN DEBUG] MQTT config loaded:", self.mqtt_config)
+                self.token = self.mqtt_config.get("token")
                 self.initialize_mqtt()
                 self.show_main_menu()
             except json.JSONDecodeError:
-                print(f"Error reading {CONFIG_FILE}. Please reconfigure.")
+                if DEBUG: print(f"[MAIN ERROR] Error reading {CONFIG_FILE}. Please reconfigure.")
                 if os.path.exists(config_path): os.remove(config_path)
                 self.push_screen("admin_login", self.build_admin_login_screen)
             except Exception as e:
-                print(f"An error occurred loading config: {e}")
+                if DEBUG: print(f"[MAIN ERROR] An error occurred loading config: {e}")
                 self.push_screen("admin_login", self.build_admin_login_screen)
         else:
             self.push_screen("admin_login", self.build_admin_login_screen)
 
         self.schedule_healthcheck()
-        try:
-            self.door_sensor = Door(sensor_pin=17, relay_pin=27, # Adjust pins if needed
-                                      mqtt_publish_callback=self.door_state_changed,
-                                      relay_active_high=False)
-            print("[Door] Door sensor initialized.")
-        except Exception as e:
-            print(f"[ERROR] Error initializing Door Sensor: {e}. Door control may fail.")
-            self.door_sensor = None
 
-        self.root.protocol("WM_DELETE_WINDOW", self.cleanup) # Register cleanup on close
+        if GPIO_AVAILABLE:
+            try:
+                self.door_sensor_handler = Door(sensor_pin=DOOR_SENSOR_PIN, relay_pin=DOOR_RELAY_PIN, mqtt_publish_callback=self.door_state_changed_mqtt, relay_active_high=False)
+                if DEBUG: print("[MAIN INFO] Door handler (sensor & relay) initialized.")
+            except Exception as e:
+                if DEBUG: print(f"[MAIN ERROR] Error initializing Door Handler: {e}. Door control/sensor may fail.")
+                self.door_sensor_handler = None
+        else:
+            self.door_sensor_handler = None
+            if DEBUG: print("[MAIN WARN] GPIO not available, Door handler not initialized.")
+
+        self.root.protocol("WM_DELETE_WINDOW", self.cleanup)
+
+    def setup_gpio_components(self):
+        if not GPIO_AVAILABLE: return
+        try:
+            GPIO.setmode(GPIO.BCM)
+            GPIO.setwarnings(False)
+            GPIO.setup(SOS_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            GPIO.add_event_detect(SOS_BUTTON_PIN, GPIO.BOTH, callback=self._sos_button_callback, bouncetime=BUTTON_DEBOUNCE_TIME)
+            self.last_sos_button_state = GPIO.input(SOS_BUTTON_PIN)
+            GPIO.setup(OPEN_BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+            GPIO.add_event_detect(OPEN_BUTTON_PIN, GPIO.BOTH, callback=self._open_button_callback, bouncetime=BUTTON_DEBOUNCE_TIME)
+            self.last_open_button_state = GPIO.input(OPEN_BUTTON_PIN)
+            GPIO.setup(BUZZER_PIN, GPIO.OUT, initial=GPIO.LOW)
+            if DEBUG: print("[MAIN INFO] GPIO SOS Button, Open Button, Buzzer initialized.")
+        except Exception as e:
+            if DEBUG: print(f"[MAIN ERROR] Failed to setup GPIO components: {e}")
 
     def initialize_fingerprint_sensor(self):
         if PyFingerprint is None:
-            print("[WARN] PyFingerprint library not loaded. Fingerprint sensor disabled.")
+            if DEBUG: print("[MAIN WARN] PyFingerprint library not loaded. Fingerprint sensor disabled.")
             return
         try:
-            print(f"[INFO] Initializing fingerprint sensor on {FINGERPRINT_PORT} at {FINGERPRINT_BAUDRATE} baud...")
+            if DEBUG: print(f"[MAIN INFO] Initializing fingerprint sensor on {FINGERPRINT_PORT} at {FINGERPRINT_BAUDRATE} baud...")
             self.fingerprint_sensor = PyFingerprint(FINGERPRINT_PORT, FINGERPRINT_BAUDRATE, 0xFFFFFFFF, 0x00000000)
             if self.fingerprint_sensor.verifyPassword():
-                print("[INFO] Fingerprint sensor initialized and verified successfully.")
+                if DEBUG: print("[MAIN INFO] Fingerprint sensor initialized and verified successfully.")
+                if self.mqtt_manager:
+                    self.mqtt_manager.set_fingerprint_sensor(self.fingerprint_sensor)
             else:
-                print("[ERROR] Failed to verify fingerprint sensor password. Check sensor connection/config.")
-                self.fingerprint_sensor = None # Disable sensor if verification fails
+                if DEBUG: print("[MAIN ERROR] Failed to verify fingerprint sensor password. Check sensor connection/config.")
+                self.fingerprint_sensor = None
         except Exception as e:
-            print(f"[ERROR] Failed to initialize fingerprint sensor: {e}")
+            if DEBUG: print(f"[MAIN ERROR] Failed to initialize fingerprint sensor: {e}")
             self.fingerprint_sensor = None
 
     def initialize_mqtt(self):
         if self.mqtt_config and not self.mqtt_manager:
-            if DEBUG: print("[DEBUG] Initializing MQTT Manager...")
-            # Pass the initialized fingerprint sensor to MQTTManager
-            self.mqtt_manager = MQTTManager(self.mqtt_config, self.mac,
-                                            fingerprint_sensor=self.fingerprint_sensor, # Pass sensor object
-                                            debug=DEBUG)
-            self.mqtt_manager.on_token_received = self.on_token_received
+            if DEBUG: print("[MAIN DEBUG] Initializing MQTT Manager with config:", self.mqtt_config)
+            self.mqtt_manager = MQTTManager(self.mqtt_config, self.mac, fingerprint_sensor=self.fingerprint_sensor, debug=DEBUG)
+            self.mqtt_manager.on_token_received = self.on_token_received_from_mqtt
             self.mqtt_manager.on_connection_status_change = self.update_connection_status
             if not self.mqtt_manager.connect_and_register():
-                print("[WARN] Initial MQTT connection/registration attempt failed.")
-        elif self.mqtt_manager and self.fingerprint_sensor:
-             # If MQTT Manager exists but sensor was initialized later, set it
+                if DEBUG: print("[MAIN WARN] Initial MQTT connection/registration attempt failed.")
+        elif self.mqtt_manager and self.fingerprint_sensor and not self.mqtt_manager.fingerprint_sensor:
              self.mqtt_manager.set_fingerprint_sensor(self.fingerprint_sensor)
 
 
@@ -235,65 +263,84 @@ class App:
         else:
             self.connection_status_label.configure(image=None, text=status_text, text_color=text_color, font=("Segoe UI", 12,"bold"))
 
-    def on_token_received(self, token):
-        if token:
-            self.token = token
-            if DEBUG: print("[DEBUG] Token received callback triggered.")
-            self.root.after(500, self._connect_mqtt_with_token)
-        else:
-             print("[ERROR] Invalid token received (None). Triggering re-registration.")
-             self.token = None
-             self.mqtt_manager = None # Reset MQTT manager
-             # Optionally show config screen again or attempt registration automatically
-             self.root.after(1000, self.initialize_mqtt) # Try re-registering
 
+    def on_token_received_from_mqtt(self, new_username, new_token):
+        config_changed = False
+        if new_token and new_username:
+            if self.token != new_token or self.mqtt_config.get("mqtt_username") != new_username:
+                self.token = new_token
+                self.mqtt_config["token"] = new_token
+                self.mqtt_config["mqtt_username"] = new_username
+                config_changed = True
+                if DEBUG: print(f"[MAIN DEBUG] New token/username received by App and updated in mqtt_config.")
+        else:
+            if self.token is not None or self.mqtt_config.get("token") is not None:
+                self.token = None
+                if "token" in self.mqtt_config: del self.mqtt_config["token"]
+                if "mqtt_username" in self.mqtt_config: del self.mqtt_config["mqtt_username"]
+                config_changed = True
+                if DEBUG: print("[MAIN ERROR] Invalid token (None) received by App. Clearing stored token from mqtt_config.")
+
+        if config_changed:
+            config_path = os.path.join(script_dir, CONFIG_FILE)
+            try:
+                with open(config_path, "w") as f:
+                    json.dump(self.mqtt_config, f, indent=2)
+                if DEBUG: print(f"[MAIN DEBUG] mqtt_config saved to {CONFIG_FILE}.")
+            except Exception as e:
+                if DEBUG: print(f"[MAIN ERROR] Failed to save mqtt_config to {CONFIG_FILE}: {e}")
+
+        if not new_token:
+            if self.mqtt_manager:
+                self.mqtt_manager.disconnect_client()
+                self.mqtt_manager.token = None
+                self.mqtt_manager.username = None
+            self.root.after(1000, self.initialize_mqtt)
 
     def _connect_mqtt_with_token(self):
         if self.mqtt_manager is not None:
-            if DEBUG: print("[DEBUG] Attempting to connect with token...")
-            # Ensure sensor is passed if manager was re-created
+            if DEBUG: print("[MAIN DEBUG] App is telling MQTTManager to connect with token...")
             if not self.mqtt_manager.fingerprint_sensor and self.fingerprint_sensor:
                  self.mqtt_manager.set_fingerprint_sensor(self.fingerprint_sensor)
             self.mqtt_manager.connect_with_token()
-        else:
-            print("[WARN] Cannot connect with token: MQTT Manager not initialized.")
+        elif DEBUG: print("[MAIN WARN] Cannot connect with token: MQTT Manager not initialized.")
 
-    def door_state_changed(self, door_payload):
-        if not self.mqtt_manager or not self.mqtt_manager.connected or not self.token:
-            if DEBUG: print("[DEBUG] Door state changed, but MQTT not ready to publish.")
+    def door_state_changed_mqtt(self, door_payload):
+        if not self.mqtt_manager or not self.mqtt_manager.token:
+            if DEBUG: print("[MAIN DEBUG] Door state changed, but MQTT not ready to publish.")
             return
-        door_payload["MacAddress"] = self.mac
-        door_payload["Token"] = self.token
-        door_payload["DeviceTime"] = datetime.now(timezone.utc).isoformat(timespec='seconds') + "Z"
+        door_payload["MacAddress"]  = self.mac
+        door_payload["Token"]       = self.mqtt_manager.token
+        door_payload["DeviceTime"]  = datetime.now(timezone.utc).isoformat(timespec='seconds') + "Z"
+        if DEBUG: print("[MAIN DEBUG] Door state changed, queueing/publishing payload:", door_payload)
         try:
-            json_payload = json.dumps(door_payload, separators=(",", ":"))
-            if DEBUG: print("[DEBUG] Door state changed, publishing payload:", json_payload)
-            if self.mqtt_manager.client:
-                result, mid = self.mqtt_manager.client.publish("iot/devices/doorstatus", payload=json_payload, qos=1)
-                if result != mqtt.MQTT_ERR_SUCCESS: print(f"[WARN] Failed to publish door status (Error code: {result})")
-            else: print("[WARN] MQTT client not available within manager to publish door state.")
-        except Exception as e: print(f"[ERROR] Error publishing door state: {e}")
+            self.mqtt_manager._publish_or_queue("iot/devices/doorstatus", door_payload, qos=1, user_properties=[("MacAddress", self.mac)])
+        except Exception as e:
+            if DEBUG: print(f"[MAIN ERROR] Error in door_state_changed_mqtt(): {e}")
 
-    def trigger_door_open(self):
-        if self.door_sensor:
+    def trigger_door_open(self, duration_ms=DOOR_OPEN_DURATION_MS):
+        if self.open_door_timer:
+            self.root.after_cancel(self.open_door_timer)
+            self.open_door_timer = None
+        if self.door_sensor_handler:
             try:
-                self.door_sensor.open_door()
-                self.root.after(DOOR_OPEN_DURATION_MS, self.trigger_door_close)
-            except Exception as e: print(f"[ERROR] Error opening door: {e}")
-        elif DEBUG: print("[DEBUG] Door sensor not available, cannot open door.")
+                self.door_sensor_handler.open_door()
+                if duration_ms > 0 :
+                    self.open_door_timer = self.root.after(duration_ms, self.trigger_door_close)
+            except Exception as e:
+                if DEBUG: print(f"[MAIN ERROR] Error opening door: {e}")
+        elif DEBUG: print("[MAIN DEBUG] Door handler not available, cannot open door.")
 
     def trigger_door_close(self):
-        if self.door_sensor:
+        if self.open_door_timer:
+            self.root.after_cancel(self.open_door_timer)
+            self.open_door_timer = None
+        if self.door_sensor_handler:
             try:
-                self.door_sensor.close_door()
-            except Exception as e: print(f"[ERROR] Error closing door: {e}")
-        elif DEBUG: print("[DEBUG] Door sensor not available, cannot close door.")
-
-    def schedule_guest_cleanup(self):
-        pass
-
-    def clean_guest_data(self):
-        pass
+                self.door_sensor_handler.close_door()
+            except Exception as e:
+                if DEBUG: print(f"[MAIN ERROR] Error closing door: {e}")
+        elif DEBUG: print("[MAIN DEBUG] Door handler not available, cannot close door.")
 
     def show_background(self):
         if self.bg_photo:
@@ -304,26 +351,20 @@ class App:
 
     def clear_frames(self, keep_background=True, clear_face_elements=True):
         face.stop_face_recognition()
-        # Destroy specific frames or widgets used by different screens
         widgets_to_destroy = []
         for widget in self.root.winfo_children():
-            # Check if widget belongs to a screen frame or is a temporary UI element
             if widget == self.frame_mqtt or widget == self.frame_menu or \
                widget == self.loading_progress or \
-               (hasattr(widget, '_owner_frame') and widget._owner_frame == 'fingerprint'): # Tag fingerprint frame if needed
+               (hasattr(widget, '_owner_frame') and widget._owner_frame == 'fingerprint'):
                 widgets_to_destroy.append(widget)
             elif clear_face_elements and \
                  (widget == self.face_info_label or \
                   widget == self.face_image_label or \
                   widget == self.name_label):
                  widgets_to_destroy.append(widget)
-            # Avoid destroying persistent elements like bg_label, connection_status_label, config_button
-
         for widget in widgets_to_destroy:
              if widget and widget.winfo_exists():
                  widget.destroy()
-
-        # Reset frame references
         self.frame_mqtt = None
         self.frame_menu = None
         self.loading_progress = None
@@ -331,25 +372,27 @@ class App:
             self.face_info_label = None
             self.face_image_label = None
             self.name_label = None
-
         if keep_background:
             self.show_background()
             if self.connection_status_label and self.connection_status_label.winfo_exists():
                  self.connection_status_label.lift()
-            self.create_config_button() # Ensure config button is always visible
-            
+            self.create_config_button()
+            if self.sync_button and self.sync_button.winfo_exists():
+                 self.sync_button.lift()
+
 
     def push_screen(self, screen_id, screen_func, *args):
-        # Allow passing args to screen build function
         if self.screen_history and self.screen_history[-1][0] == screen_id:
-            # Avoid pushing the same screen consecutively
-            return
-        self.screen_history.append((screen_id, screen_func, args)) # Store args
+            current_args = self.screen_history[-1][2]
+            if args == current_args:
+                 if DEBUG: print(f"[MAIN DEBUG] Screen {screen_id} with same args already at top. Ignoring push.")
+                 return
+        self.screen_history.append((screen_id, screen_func, args))
         if DEBUG:
             history_ids = [sid for sid, _, _ in self.screen_history]
-            print(f"[DEBUG] Pushing screen: {screen_id}. History: {history_ids}")
+            print(f"[MAIN DEBUG] Pushing screen: {screen_id}. History: {history_ids}")
         self.clear_frames()
-        screen_func(*args) # Call with stored args
+        screen_func(*args)
 
     def go_back(self):
         if len(self.screen_history) > 1:
@@ -357,60 +400,57 @@ class App:
             screen_id, screen_func, args = self.screen_history[-1]
             if DEBUG:
                 history_ids = [sid for sid, _, _ in self.screen_history]
-                print(f"[DEBUG] Going back to screen: {screen_id}. History: {history_ids}")
+                print(f"[MAIN DEBUG] Going back to screen: {screen_id}. History: {history_ids}")
             self.clear_frames()
-            screen_func(*args) # Call with stored args
+            screen_func(*args)
         else:
-            if DEBUG: print("[DEBUG] No previous screen in history, going to main menu.")
-            self.return_to_main_menu() # Use dedicated function
-
+            if DEBUG: print("[MAIN DEBUG] No previous screen in history, going to main menu.")
+            self.return_to_main_menu()
 
     def return_to_main_menu(self, event=None):
-        if DEBUG: print("[DEBUG] Returning to main menu...")
+        if DEBUG: print("[MAIN DEBUG] Returning to main menu...")
         face.stop_face_recognition()
-        self.screen_history = [] # Clear history before pushing main menu
-        self.push_screen("main_menu", self.show_main_menu)
+        self.screen_history = [( "main_menu", self.show_main_menu, ())]
+        self.clear_frames()
+        self.show_main_menu()
+
 
     def create_config_button(self):
-        # Check if button already exists
         for widget in self.root.winfo_children():
             if isinstance(widget, ctk.CTkButton) and hasattr(widget, '_button_id') and widget._button_id == 'config_button':
                 widget.lift()
                 return
-        # Create new button
-        config_button = ctk.CTkButton(
-            self.root, text="Cài Đặt", command=self.confirm_reconfigure, width=90, height=40,
-            fg_color="#6c757d", hover_color="#5a6268", font=("Segoe UI", 16), text_color="white"
-        )
-        config_button._button_id = 'config_button' # Add identifier
+        config_button = ctk.CTkButton(self.root, text="Cài Đặt", command=self.confirm_reconfigure, width=90, height=40, fg_color="#6c757d", hover_color="#5a6268", font=("Segoe UI", 16), text_color="white")
+        config_button._button_id = 'config_button'
         config_button.place(relx=0.99, rely=0.01, anchor="ne")
 
     def confirm_reconfigure(self):
-        result = messagebox.askyesno("Xác nhận", "Bạn có chắc chắn muốn cấu hình lại thiết bị không?\nThao tác này sẽ xóa cấu hình MQTT hiện tại và yêu cầu đăng nhập lại.", icon='warning', parent=self.root)
+        result = messagebox.askyesno("Xác nhận", "Bạn có chắc chắn muốn cấu hình lại thiết bị không?\nThao tác này sẽ xóa cấu hình MQTT hiện tại (bao gồm cả token đã lưu) và yêu cầu đăng nhập lại.", icon='warning', parent=self.root)
         if result: self.reconfigure()
 
     def reconfigure(self):
-        if DEBUG: print("[DEBUG] Reconfiguration requested.")
+        if DEBUG: print("[MAIN DEBUG] Reconfiguration requested.")
         if self.mqtt_manager:
             self.mqtt_manager.disconnect_client()
             self.mqtt_manager = None
-            self.token = None
-            self.update_connection_status(False)
-            if DEBUG: print("[DEBUG] MQTT Manager disconnected for reconfiguration.")
+        self.token = None
+        self.update_connection_status(False)
+        if DEBUG: print("[MAIN DEBUG] MQTT Manager disconnected for reconfiguration.")
         config_path = os.path.join(script_dir, CONFIG_FILE)
         if os.path.exists(config_path):
             try:
                 os.remove(config_path)
-                if DEBUG: print("[DEBUG] Removed configuration file:", CONFIG_FILE)
-            except Exception as e: print(f"[ERROR] Error removing config file {config_path}: {e}")
+                if DEBUG: print("[MAIN DEBUG] Removed configuration file:", CONFIG_FILE)
+            except Exception as e:
+                if DEBUG: print(f"[MAIN ERROR] Error removing config file {config_path}: {e}")
         self.mqtt_config = {}
         self.screen_history = []
         self.push_screen("admin_login", self.build_admin_login_screen)
 
     def build_admin_login_screen(self):
         self.frame_mqtt = ctk.CTkFrame(self.root, fg_color=BG_COLOR, bg_color=BG_COLOR)
-        self.frame_mqtt.place(relx=0.5, rely=0.25, anchor="center")
-        title_label = ctk.CTkLabel(self.frame_mqtt, text="Xác thực tài khoản", font=("Segoe UI", 24, "bold"))
+        self.frame_mqtt.place(relx=0.5, rely=0.35, anchor="center")
+        title_label = ctk.CTkLabel(self.frame_mqtt, text="Xác thực tài khoản Admin", font=("Segoe UI", 24, "bold"))
         title_label.grid(row=0, column=0, columnspan=2, pady=(10, 20))
         user_label = ctk.CTkLabel(self.frame_mqtt, text="Tài khoản", font=("Segoe UI", 16))
         user_label.grid(row=1, column=0, padx=(5, 10), pady=5, sticky="e")
@@ -420,18 +460,15 @@ class App:
         pass_label.grid(row=2, column=0, padx=(5, 10), pady=5, sticky="e")
         self.admin_pass_entry = ctk.CTkEntry(self.frame_mqtt, width=250, height=35, show="*", placeholder_text="", font=("Segoe UI", 14))
         self.admin_pass_entry.grid(row=2, column=1, padx=(10, 5), pady=5, sticky="w")
-        login_button = ctk.CTkButton(self.frame_mqtt, text="Ðăng Nhập", width=150, height=40, font=("Segoe UI", 18, "bold"), fg_color="#4f918b", text_color="white", command=self.check_admin_login)
-        login_button.grid(row=3, column=0, columnspan=2, pady=(10, 20))
-        # self.admin_user_entry.focus()
-        # self.admin_user_entry.bind("<Return>", lambda event: self.check_admin_login())
-        # self.admin_pass_entry.bind("<Return>", lambda event: self.check_admin_login())
+        login_button = ctk.CTkButton(self.frame_mqtt, text="Ðăng Nhập", width=150, height=40, font=("Segoe UI", 18, "bold"), fg_color="#4f918b",hover_color="#427b75", text_color="white", command=self.check_admin_login)
+        login_button.grid(row=3, column=0, columnspan=2, pady=(20, 20))
 
 
     def check_admin_login(self):
         username = self.admin_user_entry.get()
         password = self.admin_pass_entry.get()
         if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            if DEBUG: print("[DEBUG] Admin authentication successful.")
+            if DEBUG: print("[MAIN DEBUG] Admin authentication successful.")
             self.push_screen("mqtt_config", self.build_mqtt_config_screen)
         else:
             messagebox.showerror("Lỗi Đăng Nhập", "Tài khoản hoặc mật khẩu admin không đúng.", parent=self.root)
@@ -439,73 +476,90 @@ class App:
 
     def build_mqtt_config_screen(self):
         self.frame_mqtt = ctk.CTkFrame(self.root, fg_color=BG_COLOR, bg_color=BG_COLOR)
-        self.frame_mqtt.place(relx=0.5, rely=0.2, anchor="center")
-        title_label = ctk.CTkLabel(self.frame_mqtt, text="CẤU HÌNH SERVER", font=("Segoe UI", 24, "bold"))
+        self.frame_mqtt.place(relx=0.5, rely=0.4, anchor="center")
+        title_label = ctk.CTkLabel(self.frame_mqtt, text="CẤU HÌNH KẾT NỐI SERVER", font=("Segoe UI", 24, "bold"))
         title_label.grid(row=0, column=0, columnspan=2, pady=(5, 20))
-   
-        self.server_entry = ctk.CTkEntry(self.frame_mqtt, width=150, height=35, placeholder_text="ĐỊA CHỈ", font=("Segoe UI", 14))
-        self.server_entry.grid(row=2, column=0, padx=5, pady=(0, 10), sticky="w")
-        self.port_entry = ctk.CTkEntry(self.frame_mqtt, width=65, height=35, placeholder_text="CỔNG", font=("Segoe UI", 14))
-        self.port_entry.grid(row=2, column=1, padx=5, pady=(0, 10), sticky="w")
-        self.mqtt_user_entry = ctk.CTkEntry(self.frame_mqtt, width=150, height=35, placeholder_text="TÀI KHOẢN", font=("Segoe UI", 14))
-        self.mqtt_user_entry.grid(row=4, column=0, padx=5, pady=(0, 10), sticky="w")
-        self.mqtt_pass_entry = ctk.CTkEntry(self.frame_mqtt, width=150, height=35, show="*", placeholder_text="MẬT KHẨU", font=("Segoe UI", 14))
-        self.mqtt_pass_entry.grid(row=4, column=1, padx=5, pady=(0, 20), sticky="w")
+        domain_label = ctk.CTkLabel(self.frame_mqtt, text="Domain (HTTP Token):", font=("Segoe UI", 16))
+        domain_label.grid(row=1, column=0, padx=(5,10), pady=5, sticky="e")
+        self.domain_entry = ctk.CTkEntry(self.frame_mqtt, width=300, height=35, placeholder_text="VD: http://your.api.domain.com", font=("Segoe UI", 14))
+        self.domain_entry.grid(row=1, column=1, padx=(0,5), pady=5, sticky="w")
+        self.domain_entry.insert(0, self.mqtt_config.get("domain", ""))
+        http_port_label = ctk.CTkLabel(self.frame_mqtt, text="HTTP Port (Nếu Domain trống):", font=("Segoe UI", 16))
+        http_port_label.grid(row=2, column=0, padx=(5,10), pady=5, sticky="e")
+        self.http_port_entry = ctk.CTkEntry(self.frame_mqtt, width=100, height=35, placeholder_text="VD: 8080", font=("Segoe UI", 14))
+        self.http_port_entry.grid(row=2, column=1, padx=(0,5), pady=5, sticky="w")
+        self.http_port_entry.insert(0, str(self.mqtt_config.get("http_port", "8080")))
+        server_label = ctk.CTkLabel(self.frame_mqtt, text="MQTT Broker:", font=("Segoe UI", 16))
+        server_label.grid(row=3, column=0, padx=(5,10), pady=5, sticky="e")
+        self.server_entry = ctk.CTkEntry(self.frame_mqtt, width=300, height=35, placeholder_text="ĐỊA CHỈ IP HOẶC DOMAIN", font=("Segoe UI", 14))
+        self.server_entry.grid(row=3, column=1, padx=(0,5), pady=5, sticky="w")
+        self.server_entry.insert(0, self.mqtt_config.get("broker", ""))
+        port_label = ctk.CTkLabel(self.frame_mqtt, text="MQTT Port:", font=("Segoe UI", 16))
+        port_label.grid(row=4, column=0, padx=(5,10), pady=5, sticky="e")
+        self.port_entry = ctk.CTkEntry(self.frame_mqtt, width=100, height=35, placeholder_text="VD: 1883", font=("Segoe UI", 14))
+        self.port_entry.grid(row=4, column=1, padx=(0,5), pady=5, sticky="w")
+        self.port_entry.insert(0, str(self.mqtt_config.get("port", "1883")))
         button_frame = ctk.CTkFrame(self.frame_mqtt, fg_color="transparent")
-        button_frame.grid(row=5, column=0, columnspan=2, pady=(10, 20))
-        ctk.CTkButton(button_frame, text="TRỞ VỀ", width=120, height=40, font=("Segoe UI", 16),
-                     fg_color="#6c757d", hover_color="#5a6268", text_color="white", command=self.go_back).pack(side="left", padx=10)
-        ctk.CTkButton(button_frame, text="KẾT NỐI", width=150, height=40, font=("Segoe UI", 16, "bold"),
-                     fg_color="#4f918b", hover_color="#427b75", text_color="white", command=self.validate_and_save_connect).pack(side="right", padx=10)
-        #self.server_entry.focus()
-        # self.server_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
-        # self.port_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
-        # self.mqtt_user_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
-        # self.mqtt_pass_entry.bind("<Return>", lambda event: self.validate_and_save_connect())
-
+        button_frame.grid(row=5, column=0, columnspan=2, pady=(20, 20))
+        ctk.CTkButton(button_frame, text="TRỞ VỀ", width=120, height=40, font=("Segoe UI", 16), fg_color="#6c757d", hover_color="#5a6268", text_color="white", command=self.go_back).pack(side="left", padx=10)
+        ctk.CTkButton(button_frame, text="LƯU & KẾT NỐI", width=180, height=40, font=("Segoe UI", 16, "bold"), fg_color="#4f918b", hover_color="#427b75", text_color="white", command=self.validate_and_save_connect).pack(side="right", padx=10)
 
     def validate_and_save_connect(self):
         broker = self.server_entry.get().strip()
         port_str = self.port_entry.get().strip()
-        mqtt_username = self.mqtt_user_entry.get().strip()
-        mqtt_password = self.mqtt_pass_entry.get() # Get password even if empty
-        if not all([broker, port_str, mqtt_username]): # Password can be empty? Check requirements
-            messagebox.showerror("Lỗi", "Vui lòng điền Địa Chỉ Server, Cổng, và Tài Khoản Đăng Ký.", parent=self.root)
+        domain = self.domain_entry.get().strip()
+        http_port_str = self.http_port_entry.get().strip()
+        if not broker or not port_str:
+            messagebox.showerror("Lỗi", "Vui lòng điền Địa Chỉ MQTT Broker và MQTT Port.", parent=self.root)
             return
+        if not domain and not http_port_str :
+             messagebox.showerror("Lỗi", "Vui lòng điền Domain cho HTTP Token, hoặc HTTP Port nếu Domain trống.", parent=self.root)
+             return
         try:
             port = int(port_str)
-            if not (0 < port < 65536): raise ValueError("Port out of range")
+            if not (0 < port < 65536): raise ValueError("MQTT Port out of range")
         except ValueError:
-            messagebox.showerror("Lỗi", "Cổng MQTT không hợp lệ. Vui lòng nhập một số từ 1 đến 65535.", parent=self.root)
+            messagebox.showerror("Lỗi", "MQTT Port không hợp lệ. Vui lòng nhập một số từ 1 đến 65535.", parent=self.root)
             return
-        config = { "broker": broker, "port": port, "mqtt_username": mqtt_username, "mqtt_password": mqtt_password }
+        http_port = self.mqtt_config.get("http_port", 8080)
+        if http_port_str:
+            try:
+                http_port = int(http_port_str)
+                if not (0 < http_port < 65536): raise ValueError("HTTP Port out of range")
+            except ValueError:
+                messagebox.showerror("Lỗi", "HTTP Port không hợp lệ. Vui lòng nhập một số từ 1 đến 65535.", parent=self.root)
+                return
+        current_token = self.mqtt_config.get("token")
+        current_mqtt_user = self.mqtt_config.get("mqtt_username")
+        new_config = { "broker": broker, "port": port, "domain": domain, "http_port": http_port }
+        if current_token and current_mqtt_user:
+            new_config["token"] = current_token
+            new_config["mqtt_username"] = current_mqtt_user
         config_path = os.path.join(script_dir, CONFIG_FILE)
         try:
-            with open(config_path, "w") as f: json.dump(config, f, indent=4)
-            self.mqtt_config = config
-            if DEBUG: print("[DEBUG] Saved MQTT config:", self.mqtt_config)
+            with open(config_path, "w") as f: json.dump(new_config, f, indent=2)
+            self.mqtt_config = new_config
+            if DEBUG: print("[MAIN DEBUG] Saved MQTT config:", self.mqtt_config)
         except Exception as e:
-            print(f"Error saving MQTT config to {config_path}: {e}")
+            if DEBUG: print(f"[MAIN ERROR] Error saving MQTT config to {config_path}: {e}")
             messagebox.showerror("Lỗi Lưu Trữ", f"Không thể lưu cấu hình MQTT: {e}", parent=self.root)
             return
         self.show_connecting_screen()
         self.root.after(100, self._init_mqtt_after_save)
 
     def _init_mqtt_after_save(self):
-        # Disconnect old manager if exists before initializing new one
         if self.mqtt_manager:
             self.mqtt_manager.disconnect_client()
-            self.mqtt_manager = None
-            self.token = None # Reset token on reconfig
+        self.mqtt_manager = None
+        self.token = self.mqtt_config.get("token")
         self.initialize_mqtt()
-        self.root.after(2000, self.return_to_main_menu) # Allow time for connection attempt
+        self.root.after(3000, self.return_to_main_menu)
 
     def show_connecting_screen(self):
         self.clear_frames()
         self.show_background()
-        ctk.CTkLabel(self.root, text="Đang lưu cấu hình và kết nối MQTT...",
-                       font=("Segoe UI", 22), text_color="#333").place(relx=0.5, rely=0.45, anchor="center")
-        self.loading_progress = ctk.CTkProgressBar(self.root, width=400, height=15)
+        ctk.CTkLabel(self.root, text="Đang lưu cấu hình và kết nối MQTT...", font=("Segoe UI", 22), text_color="#333").place(relx=0.5, rely=0.45, anchor="center")
+        self.loading_progress = ctk.CTkProgressBar(self.root, width=400, height=15, progress_color="#4f918b")
         self.loading_progress.place(relx=0.5, rely=0.55, anchor="center")
         self.loading_progress.set(0)
         self.loading_progress.start()
@@ -513,52 +567,29 @@ class App:
     def show_main_menu(self):
         self.clear_frames()
         self.show_background()
-        self.frame_menu = ctk.CTkFrame(self.root, fg_color="transparent")
-        # Đặt frame menu vào giữa màn hình
-        self.frame_menu.place(relx=0.5, rely=0.5, anchor="center")
-
-        # Options definition (3 tùy chọn)
+        if not self.frame_menu or not self.frame_menu.winfo_exists():
+            self.frame_menu = ctk.CTkFrame(self.root, fg_color="transparent")
+            self.frame_menu.place(relx=0.5, rely=0.5, anchor="center")
+        else:
+            for widget in self.frame_menu.winfo_children():
+                widget.destroy()
         options = [
             (self.face_img, "KHUÔN MẶT", self.show_face_recognition_screen),
             (self.fingerprint_img, "VÂN TAY", self.start_fingerprint_scan),
             (self.idcard_img, "THẺ CCCD", self.start_id_card_scan),
         ]
-
-        # --- THAY ĐỔI LAYOUT ---
-        num_options = len(options)
-        cols = 3 # Đặt số cột là 3 để hiển thị trên một hàng
-        # rows = (num_options + cols - 1) // cols # Giờ chỉ có 1 hàng chính
-        # --- KẾT THÚC THAY ĐỔI LAYOUT ---
-
         for idx, (img, label_text, cmd) in enumerate(options):
-            if img is None:
-                print(f"[WARN] Skipping main menu option '{label_text}' due to missing image.")
-                continue
-
-            # Tất cả các nút giờ sẽ ở hàng 0 (row_num = 0)
-            row_num = 0
-            col_num = idx # Cột sẽ là 0, 1, 2
-
-            option_frame = ctk.CTkFrame(self.frame_menu, width=BUTTON_WIDTH, height=BUTTON_HEIGHT,
-                                        fg_color=BG_COLOR, bg_color="transparent",
-                                        corner_radius=15, border_width=2, border_color="#CCCCCC")
-            # Đặt frame vào lưới tại hàng 0, cột tương ứng
-            option_frame.grid(row=row_num, column=col_num, padx=PAD_X, pady=PAD_Y)
+            if img is None: continue
+            option_frame = ctk.CTkFrame(self.frame_menu, width=BUTTON_WIDTH, height=BUTTON_HEIGHT, fg_color=BG_COLOR, bg_color="transparent", corner_radius=15, border_width=2, border_color="#CCCCCC")
+            option_frame.grid(row=0, column=idx, padx=PAD_X, pady=PAD_Y)
             option_frame.grid_propagate(False)
-
-            button = ctk.CTkButton(
-                option_frame, image=img, text=label_text, font=("Segoe UI", 20, "bold"),
-                text_color=BUTTON_FG, compound="top", fg_color="transparent",
-                hover_color="#EAEAEA", command=cmd
-            )
+            button = ctk.CTkButton(option_frame, image=img, text=label_text, font=("Segoe UI", 20, "bold"), text_color=BUTTON_FG, compound="top", fg_color="transparent", hover_color="#EAEAEA", command=cmd)
             button.place(relx=0.5, rely=0.5, anchor="center", relwidth=1.0, relheight=1.0)
-
 
     def start_fingerprint_scan(self):
          if not self.fingerprint_sensor:
              messagebox.showerror("Lỗi Cảm Biến", "Cảm biến vân tay chưa được khởi tạo hoặc bị lỗi.", parent=self.root)
              return
-         # Make sure sensor password verification still holds
          try:
               if not self.fingerprint_sensor.verifyPassword():
                    messagebox.showerror("Lỗi Cảm Biến", "Không thể xác thực với cảm biến vân tay.", parent=self.root)
@@ -566,53 +597,43 @@ class App:
          except Exception as e:
               messagebox.showerror("Lỗi Cảm Biến", f"Lỗi giao tiếp cảm biến vân tay: {e}", parent=self.root)
               return
-
-         if DEBUG: print("[DEBUG] Starting fingerprint prompt...")
-         # Push fingerprint screen without adding main menu again
-         self.clear_frames() # Clear main menu buttons
-         fingerprint.open_fingerprint_prompt(
-             self.root,
-             sensor=self.fingerprint_sensor, # Pass the initialized sensor object
-             on_success_callback=self.handle_fingerprint_success,
-             on_failure_callback=self.handle_fingerprint_failure
-         )
+         if DEBUG: print("[MAIN DEBUG] Starting fingerprint prompt...")
+         self.clear_frames()
+         fp_ui_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+         fp_ui_frame._owner_frame = 'fingerprint'
+         fp_ui_frame.pack(expand=True, fill="both")
+         fingerprint.open_fingerprint_prompt(fp_ui_frame, sensor=self.fingerprint_sensor, on_success_callback=self.handle_fingerprint_success, on_failure_callback=self.handle_fingerprint_failure)
 
     def start_id_card_scan(self):
-         if DEBUG: print("[DEBUG] Starting ID card recognition...")
-         # Không cần clear_frames() vì messagebox sẽ hiện trên màn hình hiện tại
-         # self.clear_frames()
-
-         # --- GỌI HÀM VỚI CALLBACK ---
-         id_card.open_id_card_recognition(
-                on_close_callback=self.return_to_main_menu # Truyền hàm quay lại menu
-         )
-
+         if DEBUG: print("[MAIN DEBUG] Starting ID card recognition...")
+         id_card.open_id_card_recognition(on_close_callback=self.return_to_main_menu)
 
     def handle_fingerprint_success(self, bio_id):
-        """Callback for successful fingerprint recognition AND validity check."""
-        if DEBUG: print(f"[DEBUG] MainApp: Fingerprint Success Callback for bioId: {bio_id}")
-        # Retrieve person's name for MQTT message (optional, could add function to database.py)
-        person_name = bio_id # Default to bio_id if name retrieval isn't implemented/needed
-        # Example: Fetch name if function exists
-        # user_info = database.get_user_info_by_bio_id(bio_id)
-        # if user_info and user_info['person_name']: person_name = user_info['person_name']
-
+        if DEBUG: print(f"[MAIN DEBUG] MainApp: Fingerprint Success Callback for bioId: {bio_id}")
+        finger_pos = database.get_finger_position_by_bio_id(bio_id)
+        person_name_to_send = bio_id
+        if finger_pos is not None:
+            user_info_row = database.get_user_info_by_finger_position(finger_pos)
+            if user_info_row:
+                temp_person_name = None
+                if 'person_name' in user_info_row.keys() and user_info_row['person_name']:
+                    temp_person_name = user_info_row['person_name']
+                temp_id_number = None
+                if 'id_number' in user_info_row.keys() and user_info_row['id_number']:
+                    temp_id_number = user_info_row['id_number']
+                person_name_to_send = temp_person_name or temp_id_number or bio_id
         if self.mqtt_manager:
-             self.mqtt_manager.send_recognition_success(bio_id, person_name)
+             self.mqtt_manager.send_recognition_success(bio_id, person_name_to_send)
         self.trigger_door_open()
-        # UI update is handled by fingerprint.py, just return to main menu after delay
-        self.root.after(100, self.return_to_main_menu) # Return quickly after door triggers
+        self.root.after(2000, self.return_to_main_menu)
 
     def handle_fingerprint_failure(self):
-        """Callback for fingerprint failure (no match, invalid time, error, timeout)."""
-        if DEBUG: print("[DEBUG] MainApp: Fingerprint Failure Callback.")
-        # UI update (failure message) is handled by fingerprint.py
-        # Just return to main menu
-        self.root.after(100, self.return_to_main_menu) # Return quickly
+        if DEBUG: print("[MAIN DEBUG] MainApp: Fingerprint Failure Callback.")
+        self.root.after(100, self.return_to_main_menu)
 
     def request_manual_sync(self):
         if self.mqtt_manager and self.mqtt_manager.connected:
-             print("[INFO] Manual sync requested.")
+             if DEBUG: print("[MAIN INFO] Manual sync requested.")
              self.mqtt_manager.send_device_sync()
              messagebox.showinfo("Đồng Bộ", "Đã gửi yêu cầu đồng bộ dữ liệu đến server.", parent=self.root)
         else:
@@ -622,149 +643,87 @@ class App:
         self.push_screen("bio_records", self._build_bio_records_ui)
 
     def _build_bio_records_ui(self):
-        # Function to handle deletion confirmation and action
-        def confirm_delete(bio_id_to_delete):
-             if messagebox.askyesno("Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa người dùng có BioID: {bio_id_to_delete}?\nDữ liệu sẽ bị xóa khỏi thiết bị và cảm biến.", icon='warning', parent=self.root):
-                  delete_record(bio_id_to_delete)
-
-        # Function to perform the deletion via MQTT command
-        def delete_record(bio_id_to_delete):
+        def confirm_delete(bio_id_to_delete, finger_pos_to_delete):
+             if messagebox.askyesno("Xác nhận Xóa", f"Bạn có chắc chắn muốn xóa người dùng có BioID: {bio_id_to_delete}?\nDữ liệu sẽ bị xóa khỏi thiết bị và cảm biến (vị trí {finger_pos_to_delete if finger_pos_to_delete is not None else 'N/A'}).", icon='warning', parent=self.root):
+                  delete_record(bio_id_to_delete, finger_pos_to_delete)
+        def delete_record(bio_id_to_delete, finger_pos_to_delete):
              if self.mqtt_manager and self.mqtt_manager.connected:
-                  # Simulate sending a PUSH_DELETE_BIO command locally for immediate effect?
-                  # Or just rely on server sync? For now, let's assume we need to trigger delete locally too.
-
-                  # 1. Get Position from DB
-                  position = database.get_finger_position_by_bio_id(bio_id_to_delete)
-                  # 2. Delete from Sensor
-                  sensor_deleted = False
-                  if position is not None and self.fingerprint_sensor:
+                  sensor_deleted = True
+                  if finger_pos_to_delete is not None and self.fingerprint_sensor and PyFingerprint is not None:
+                      sensor_deleted = False
                       try:
                           if self.fingerprint_sensor.verifyPassword():
-                              if self.fingerprint_sensor.deleteTemplate(position):
-                                   print(f"[INFO] Deleted fingerprint from sensor position {position} for bioId {bio_id_to_delete}.")
+                              if self.fingerprint_sensor.deleteTemplate(finger_pos_to_delete):
+                                   if DEBUG: print(f"[MAIN INFO] Deleted fingerprint from sensor position {finger_pos_to_delete} for bioId {bio_id_to_delete}.")
                                    sensor_deleted = True
-                              else: print(f"[ERROR] Failed to delete fingerprint from sensor position {position}.")
-                          else: print("[ERROR] Sensor password verify failed for delete.")
-                      except Exception as e: print(f"[ERROR] Exception deleting from sensor: {e}")
-                  # 3. Delete from DB
+                              elif DEBUG: print(f"[MAIN ERROR] Failed to delete fingerprint from sensor position {finger_pos_to_delete}.")
+                          elif DEBUG: print("[MAIN ERROR] Sensor password verify failed for delete.")
+                      except Exception as e:
+                          if DEBUG: print(f"[MAIN ERROR] Exception deleting from sensor: {e}")
                   db_deleted = database.delete_embedding_by_bio_id(bio_id_to_delete)
-
                   if db_deleted:
-                      print(f"[INFO] Record for bioId {bio_id_to_delete} deleted from DB.")
-                      # Optionally send a PUSH_DELETE message to server if needed,
-                      # or assume server handles sync based on device state.
-                      # Refresh the UI
-                      self._build_bio_records_ui() # Rebuild the screen
-                      messagebox.showinfo("Thành Công", f"Đã xóa người dùng {bio_id_to_delete}.", parent=self.root)
+                      if DEBUG: print(f"[MAIN INFO] Record for bioId {bio_id_to_delete} processed for deletion.")
+                      self.refresh_bio_records_ui()
+                      messagebox.showinfo("Thành Công", f"Đã xử lý xóa người dùng {bio_id_to_delete}.", parent=self.root)
                   else:
                        messagebox.showerror("Lỗi", f"Không thể xóa người dùng {bio_id_to_delete} khỏi database.", parent=self.root)
-
              else:
-                  messagebox.showerror("Lỗi MQTT", "Không kết nối MQTT. Không thể xóa.", parent=self.root)
-
+                  messagebox.showerror("Lỗi MQTT", "Không kết nối MQTT. Không thể đồng bộ xóa với server.", parent=self.root)
 
         self.clear_frames()
         self.show_background()
-
-        # Main frame for the records display
         main_records_frame = ctk.CTkFrame(self.root, fg_color="transparent")
-        main_records_frame.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.9, relheight=0.8)
-
+        main_records_frame.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.95, relheight=0.9)
         ctk.CTkLabel(main_records_frame, text="Dữ liệu Sinh trắc học Lưu trữ", font=("Segoe UI", 20, "bold")).pack(pady=(5, 10))
-
-        # Frame for Treeview and Scrollbar
         tree_frame = ctk.CTkFrame(main_records_frame)
-        tree_frame.pack(expand=True, fill="both", padx=10, pady=5)
-
-        # Treeview Scrollbar
+        tree_frame.pack(expand=True, fill="both", padx=5, pady=5)
         tree_scroll = ctk.CTkScrollbar(tree_frame)
         tree_scroll.pack(side="right", fill="y")
-
-        # Treeview Widget
         cols = ("Name", "BioID", "CCCD", "FromDate", "ToDate", "FromTime", "ToTime", "Days", "FingerPos", "MAC")
         self.records_tree = ttk.Treeview(tree_frame, columns=cols, show='headings', yscrollcommand=tree_scroll.set, height=15)
-
-        # Define headings
-        self.records_tree.heading("Name", text="Tên")
-        self.records_tree.heading("BioID", text="BioID")
-        self.records_tree.heading("CCCD", text="CCCD/ID")
-        self.records_tree.heading("FromDate", text="Từ Ngày")
-        self.records_tree.heading("ToDate", text="Đến Ngày")
-        self.records_tree.heading("FromTime", text="Từ Giờ")
-        self.records_tree.heading("ToTime", text="Đến Giờ")
-        self.records_tree.heading("Days", text="Ngày Active")
-        self.records_tree.heading("FingerPos", text="Vị Trí Vân Tay")
-        self.records_tree.heading("MAC", text="MAC Address")
-
-
-        # Configure column widths (adjust as needed)
-        self.records_tree.column("Name", width=120, anchor="w")
-        self.records_tree.column("BioID", width=100, anchor="w")
-        self.records_tree.column("CCCD", width=100, anchor="w")
-        self.records_tree.column("FromDate", width=80, anchor="center")
-        self.records_tree.column("ToDate", width=80, anchor="center")
-        self.records_tree.column("FromTime", width=60, anchor="center")
-        self.records_tree.column("ToTime", width=60, anchor="center")
-        self.records_tree.column("Days", width=80, anchor="center")
-        self.records_tree.column("FingerPos", width=80, anchor="center")
-        self.records_tree.column("MAC", width=110, anchor="w")
-
-
+        col_map = {"Name":"Tên", "BioID":"BioID", "CCCD":"CCCD/ID", "FromDate":"Từ Ngày", "ToDate":"Đến Ngày", "FromTime":"Từ Giờ", "ToTime":"Đến Giờ", "Days":"Ngày Active", "FingerPos":"Vị Trí Vân Tay", "MAC":"MAC"}
+        col_widths = {"Name":120, "BioID":100, "CCCD":100, "FromDate":80, "ToDate":80, "FromTime":70, "ToTime":70, "Days":80, "FingerPos":80, "MAC":120}
+        for col_id, col_text in col_map.items(): self.records_tree.heading(col_id, text=col_text)
+        for col_id, col_w in col_widths.items(): self.records_tree.column(col_id, width=col_w, anchor="w" if col_id in ["Name", "BioID", "CCCD", "MAC"] else "center", minwidth=50)
         self.records_tree.pack(side="left", fill="both", expand=True)
         tree_scroll.configure(command=self.records_tree.yview)
-
-        records = database.retrieve_all_bio_records_for_display(mac_address=self.mac)
-        if not records:
-             ctk.CTkLabel(main_records_frame, text="Không có dữ liệu sinh trắc học nào được lưu trữ cục bộ.",
-                           font=("Segoe UI", 18)).pack(pady=20)
-
-        else:
-            for i, rec in enumerate(records):
-                try:
-                    # Unpack all 14 elements returned by the updated DB function
-                    rec_id, bio_id, id_number, from_date, to_date, from_time, to_time, \
-                    active_days, bio_type, template_key, img_b64, mac_addr, person_name, finger_pos = rec
-
-                    # Prepare display values, handling None/empty strings
-                    display_name = person_name if person_name else (id_number if id_number else bio_id)
-                    display_cccd = id_number if id_number else "N/A"
-                    display_fdate = from_date if from_date else "-"
-                    display_tdate = to_date if to_date else "-"
-                    display_ftime = from_time if from_time else "-"
-                    display_ttime = to_time if to_time else "-"
-                    display_days = active_days if active_days else "-------"
-                    display_fpos = str(finger_pos) if finger_pos is not None else "-"
-                    display_mac = mac_addr if mac_addr else "-"
-
-                    # Insert into Treeview
-                    self.records_tree.insert("", "end", iid=i, values=(
-                        display_name, bio_id, display_cccd, display_fdate, display_tdate,
-                        display_ftime, display_ttime, display_days, display_fpos, display_mac
-                    ), tags=(bio_id,)) # Use bio_id as a tag for potential actions
-
-                except ValueError as e: print(f"[ERROR] Could not unpack record: {rec} - Error: {e}")
-                except Exception as e: print(f"[ERROR] Error displaying record {rec}: {e}")
-
-        # Add Buttons below Treeview
+        self.refresh_bio_records_ui(first_build=True)
         button_frame = ctk.CTkFrame(main_records_frame, fg_color="transparent")
-        button_frame.pack(pady=10)
-
-        # Delete Button (example - requires selecting a row)
-        def get_selected_bio_id():
-            selected_item = self.records_tree.focus() # Get selected item IID
-            if selected_item:
-                item_tags = self.records_tree.item(selected_item, "tags")
-                if item_tags:
-                    return item_tags[0] # Return the bio_id tag
-            return None
-
-        delete_button = ctk.CTkButton(button_frame, text="Xóa Người Dùng Đã Chọn", fg_color="red", hover_color="#CC0000",
-                                      command=lambda: confirm_delete(get_selected_bio_id()) if get_selected_bio_id() else messagebox.showwarning("Chưa Chọn", "Vui lòng chọn một người dùng từ danh sách để xóa.", parent=self.root))
+        button_frame.pack(pady=(10,5))
+        def get_selected_data():
+            selected_item_iid = self.records_tree.focus()
+            if selected_item_iid:
+                item_values = self.records_tree.item(selected_item_iid, "values")
+                if item_values:
+                    bio_id_val = item_values[cols.index("BioID")]
+                    finger_pos_str = item_values[cols.index("FingerPos")]
+                    finger_pos_val = int(finger_pos_str) if finger_pos_str and finger_pos_str != "-" else None
+                    return bio_id_val, finger_pos_val
+            return None, None
+        delete_button = ctk.CTkButton(button_frame, text="Xóa Người Dùng Đã Chọn", fg_color="red", hover_color="#CC0000", command=lambda: (lambda bid, fpos: confirm_delete(bid, fpos) if bid else messagebox.showwarning("Chưa Chọn", "Vui lòng chọn một người dùng từ danh sách để xóa.", parent=self.root))(*get_selected_data()))
         delete_button.pack(side="right", padx=10)
-
-
         back_button = ctk.CTkButton(button_frame, text="Quay Lại Menu Chính", command=self.return_to_main_menu)
         back_button.pack(side="left", padx=10)
+
+    def refresh_bio_records_ui(self, first_build=False):
+        if not hasattr(self, 'records_tree') or not self.records_tree.winfo_exists():
+            if not first_build:
+                self._build_bio_records_ui()
+            return
+        for item in self.records_tree.get_children(): self.records_tree.delete(item)
+        records = database.retrieve_all_bio_records_for_display(mac_address=self.mac)
+        if not records and not first_build:
+             pass
+        cols = ("Name", "BioID", "CCCD", "FromDate", "ToDate", "FromTime", "ToTime", "Days", "FingerPos", "MAC")
+        for i, rec in enumerate(records):
+            try:
+                rec_id, bio_id, id_number, from_date, to_date, from_time, to_time, active_days, bio_type, template_key, img_b64, mac_addr, person_name, finger_pos = rec
+                display_name = person_name if person_name else (id_number if id_number else bio_id)
+                self.records_tree.insert("", "end", iid=str(rec_id), values=(display_name, bio_id, id_number or "N/A", from_date or "-", to_date or "-", from_time or "-", to_time or "-", active_days or "-------", str(finger_pos) if finger_pos is not None else "-", mac_addr or "-"))
+            except ValueError as e:
+                if DEBUG: print(f"[MAIN ERROR] Could not unpack record for display: {rec} - Error: {e}")
+            except Exception as e:
+                if DEBUG: print(f"[MAIN ERROR] Error displaying record {rec}: {e}")
 
 
     def show_face_recognition_screen(self):
@@ -773,30 +732,17 @@ class App:
     def _build_face_recognition_ui(self):
         self.clear_frames(clear_face_elements=False)
         self.show_background()
-
-        if DEBUG: print(f"[DEBUG] Loading active FACE vectors from DB for MAC: {self.mac}")
-        face.face_db.clear()
-        embedding_records = database.get_active_embeddings(self.mac)
-        loaded_count = 0
-        for record in embedding_records:
-            try:
-                key = f"{record['person_name']}_{record['user_id']}" # user_id is bio_id
-                face.face_db[key] = record['embedding_data']
-                loaded_count += 1
-            except Exception as e:
-                print(f"[ERROR] Failed to load record {record.get('user_id','N/A')} into face_db: {e}")
-
-        if loaded_count == 0:
-            messagebox.showinfo("Không Tìm Thấy Khuôn Mặt",
-                                 f"Không tìm thấy dữ liệu khuôn mặt nào đang hoạt động trong database cho thời điểm hiện tại.",
-                                 parent=self.root)
+        if DEBUG: print(f"[MAIN DEBUG] Loading active FACE vectors from DB for MAC: {self.mac}")
+        face.load_active_vectors_from_db(self.mac)
+        if not face.face_db:
+            messagebox.showinfo("Không Tìm Thấy Khuôn Mặt", f"Không tìm thấy dữ liệu khuôn mặt nào đang hoạt động trong database cho thời điểm hiện tại.", parent=self.root)
             self.root.after(100, self.return_to_main_menu)
             return
 
         if not self.face_info_label or not self.face_info_label.winfo_exists():
             self.face_info_label = ctk.CTkLabel(self.root, text="", font=("Segoe UI", 20), text_color="#333", wraplength=900)
             self.face_info_label.place(relx=0.5, rely=0.02, anchor="n")
-        self.face_info_label.configure(text="") # Clear previous info
+        self.face_info_label.configure(text="")
 
         if not self.face_image_label or not self.face_image_label.winfo_exists():
             self.face_image_label = ctk.CTkLabel(self.root, text="", fg_color="black", width=640, height=480)
@@ -808,91 +754,115 @@ class App:
             self.name_label.place(relx=0.5, rely=0.95, anchor="s")
         self.name_label.configure(text="Vui lòng nhìn thẳng vào Camera")
 
-        if DEBUG: print("[DEBUG] Starting face recognition thread...")
+        if DEBUG: print("[MAIN DEBUG] Starting face recognition thread...")
         if self.face_image_label and self.face_image_label.winfo_exists():
-            threading.Thread(
-                target=face.open_face_recognition,
-                args=(self.handle_recognition_success, self.handle_recognition_failure, self.face_image_label),
-                daemon=True
-            ).start()
+            face.open_face_recognition(on_recognition=self.handle_recognition_success, on_failure_callback=self.handle_recognition_failure, parent_label=self.face_image_label)
         else:
-            print("[ERROR] Cannot start face recognition: UI Label not ready.")
+            if DEBUG: print("[MAIN ERROR] Cannot start face recognition: UI Label not ready.")
             messagebox.showerror("Lỗi UI", "Không thể khởi tạo khu vực hiển thị camera.", parent=self.root)
             self.root.after(100, self.return_to_main_menu)
 
-    def handle_recognition_success(self, name_key, score, frame):
-        if DEBUG: print(f"[DEBUG] MainApp: Face Recognition Success: Key={name_key}, Score={score:.2f}")
+    def handle_recognition_success(self, name_key, score, frame_arr):
+        if DEBUG: print(f"[MAIN DEBUG] MainApp: Face Recognition Success: Key={name_key}, Score={score:.2f}")
         parts = name_key.split('_')
         display_name = parts[0] if parts else name_key
-        bio_id = parts[1] if len(parts) > 1 else None # This is the bio_id
+        bio_id = parts[-1] if len(parts) > 1 else name_key
 
-        if bio_id is None:
-            print(f"[ERROR] Could not extract user_id (bio_id) from key: {name_key}")
-            if self.face_info_label and self.face_info_label.winfo_exists():
-                self.face_info_label.configure(text="Nhận diện thành công (ID lỗi)!", text_color="orange")
-            if self.name_label and self.name_label.winfo_exists():
-                self.name_label.configure(text="Xin chào!", text_color="green")
-        else:
-            if self.face_info_label and self.face_info_label.winfo_exists():
-                self.face_info_label.configure(text="Nhận diện thành công!", text_color="green")
-            if self.name_label and self.name_label.winfo_exists():
-                 self.name_label.configure(text=f"Xin chào, {display_name}!", text_color="green")
+        if bio_id == display_name and not any(char.isdigit() for char in bio_id):
+             if DEBUG: print(f"[MAIN WARN] Could not definitively extract bio_id from key: {name_key}. Using key as bio_id for now.")
+        if self.face_info_label and self.face_info_label.winfo_exists():
+            self.face_info_label.configure(text="THÀNH CÔNG", text_color="green")
+        if self.name_label and self.name_label.winfo_exists():
+             self.name_label.configure(text=f"XIN CHÀO, {display_name} !", text_color="green")
+        if self.face_image_label and self.face_image_label.winfo_exists():
+             profile_pic_size = (min(self.face_image_label.winfo_width(),400), min(self.face_image_label.winfo_height(),400))
+             ctk_img = get_ctk_image_from_db(bio_id, size=profile_pic_size)
+             if ctk_img:
+                 self.face_image_label.configure(image=ctk_img, text="")
+             else:
+                 if DEBUG: print(f"[MAIN WARN] Could not load stored image for bio_id: {bio_id}")
+                 try:
+                    pil_img = Image.fromarray(frame_arr)
+                    ctk_frame_img = CTkImage(light_image=pil_img, dark_image=pil_img, size=(self.face_image_label.winfo_width(), self.face_image_label.winfo_height()))
+                    self.face_image_label.configure(image=ctk_frame_img, text="")
+                 except Exception as e:
+                    if DEBUG: print(f"[MAIN ERROR] Failed to display captured frame: {e}")
+                    self.face_image_label.configure(image=None, text=f"Không tìm thấy ảnh\n{display_name}", font=("Segoe UI", 16), text_color="white")
 
-            if self.face_image_label and self.face_image_label.winfo_exists():
-                 profile_pic_size = (200, 200) # Example size
-                 ctk_img = get_ctk_image_from_db(bio_id, size=profile_pic_size)
-                 if ctk_img:
-                     self.face_image_label.configure(image=ctk_img, text="")
-                     self.face_image_label.image = ctk_img
-                 else:
-                     print(f"[WARN] Could not load stored image for user_id: {bio_id}")
-                     self.face_image_label.configure(image=None, text=f"Không tìm thấy ảnh\n{display_name}",
-                                                    font=("Segoe UI", 16), text_color="white")
-
-            if self.mqtt_manager:
-                 # Pass bio_id and display_name to MQTT
-                 self.mqtt_manager.send_recognition_success(bio_id, display_name)
-
+        if self.mqtt_manager:
+             self.mqtt_manager.send_recognition_success(bio_id, display_name)
         self.trigger_door_open()
         self.root.after(FACE_RECOGNITION_TIMEOUT_MS, self.return_to_main_menu)
 
     def handle_recognition_failure(self, reason="Unknown"):
-        if DEBUG: print(f"[DEBUG] MainApp: Face Recognition Failure. Reason: {reason}")
+        if DEBUG: print(f"[MAIN DEBUG] MainApp: Face Recognition Failure. Reason: {reason}")
         if self.name_label and self.name_label.winfo_exists():
             self.name_label.configure(text="Không thể nhận diện", text_color="red")
-        # Optionally display the reason in face_info_label
-        # if self.face_info_label and self.face_info_label.winfo_exists():
-        #     self.face_info_label.configure(text=f"Lỗi: {reason}", text_color="red")
+        if self.face_image_label and self.face_image_label.winfo_exists():
+             self.face_image_label.configure(image=None, text="Nhận diện thất bại.\nVui lòng thử lại.", font=("Segoe UI", 18), text_color="orange")
+        self.root.after(2000, self.return_to_main_menu)
 
-        self.root.after(2000, self.return_to_main_menu) # Return after showing message
+    def _sos_button_callback(self, channel):
+        if not GPIO_AVAILABLE: return
+        current_state = GPIO.input(SOS_BUTTON_PIN)
+        if current_state != self.last_sos_button_state:
+            self.last_sos_button_state = current_state
+            if current_state == GPIO.LOW:
+                if DEBUG: print("[MAIN INFO] SOS Button PRESSED")
+                GPIO.output(BUZZER_PIN, GPIO.HIGH)
+                if self.mqtt_manager:
+                    self.mqtt_manager.send_sos_alert()
+            else:
+                if DEBUG: print("[MAIN INFO] SOS Button RELEASED")
+                GPIO.output(BUZZER_PIN, GPIO.LOW)
 
+    def _open_button_callback(self, channel):
+        if not GPIO_AVAILABLE: return
+        current_state = GPIO.input(OPEN_BUTTON_PIN)
+        if current_state != self.last_open_button_state:
+            self.last_open_button_state = current_state
+            if current_state == GPIO.LOW:
+                if DEBUG: print("[MAIN INFO] Open Door Button PRESSED")
+                self.open_button_press_time = time.time()
+                self.trigger_door_open(duration_ms=DOOR_OPEN_DURATION_MS)
+            else:
+                if DEBUG: print("[MAIN INFO] Open Door Button RELEASED")
+                if self.open_button_press_time and (time.time() - self.open_button_press_time < DOOR_OPEN_DURATION_MS / 1000.0):
+                    self.trigger_door_close()
+                self.open_button_press_time = None
 
     def cleanup(self):
-        """Cleanup resources on application exit."""
-        print("[INFO] Cleaning up resources...")
+        if DEBUG: print("[MAIN INFO] Cleaning up resources...")
         face.stop_face_recognition()
         if self.mqtt_manager:
-             print("[INFO] Disconnecting MQTT client...")
+             if DEBUG: print("[MAIN INFO] Disconnecting MQTT client...")
              self.mqtt_manager.disconnect_client()
-        if self.door_sensor:
-             print("[INFO] Cleaning up door sensor GPIO...")
-             self.door_sensor.cleanup()
-        # Add fingerprint sensor cleanup if needed (depends on library)
-        # if self.fingerprint_sensor:
-        #     try:
-        #         # sensor specific cleanup if available
-        #         print("[INFO] Cleaning up fingerprint sensor...")
-        #     except Exception as e:
-        #         print(f"[WARN] Error during fingerprint sensor cleanup: {e}")
-        print("[INFO] Exiting application.")
-        self.root.destroy()
+        if self.door_sensor_handler:
+             if DEBUG: print("[MAIN INFO] Cleaning up door handler GPIO...")
+             self.door_sensor_handler.cleanup()
+        if GPIO_AVAILABLE:
+            if DEBUG: print("[MAIN INFO] Cleaning up app-level GPIO (buttons, buzzer)...")
+            channels_to_clean = [BUZZER_PIN]
+            # Check if pins are defined before adding to list, in case they are set to None
+            if SOS_BUTTON_PIN is not None: channels_to_clean.append(SOS_BUTTON_PIN)
+            if OPEN_BUTTON_PIN is not None: channels_to_clean.append(OPEN_BUTTON_PIN)
+            # Filter out None values just in case, before calling cleanup
+            channels_to_clean = [pin for pin in channels_to_clean if pin is not None]
+            if channels_to_clean:
+                GPIO.cleanup(channels_to_clean)
 
+
+        if DEBUG: print("[MAIN INFO] Exiting application.")
+        if self.root and self.root.winfo_exists():
+            self.root.destroy()
 
 if __name__ == "__main__":
+    ctk.set_appearance_mode("System")
+    ctk.set_default_color_theme("blue")
     root = ctk.CTk()
     root.geometry("1024x600")
     root.title("Access Control System")
-    # root.attributes('-fullscreen', True) # Uncomment for fullscreen
+    # root.attributes('-fullscreen', True)
     root.resizable(False, False)
     app = App(root)
     root.mainloop()
