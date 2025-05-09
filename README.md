@@ -53,6 +53,10 @@ Hệ thống bao gồm **ba thành phần chính** phối hợp chặt chẽ v�
 - **Giao diện người dùng** để đăng ký sinh trắc học và giám sát trạng thái hệ thống.
 
 ---
+## Server Test
+- docker run -d --name emqx -p 1883:1883 -p 8083:8083 -p 8084:8084 -p 8883:8883 -p 18083:18083 emqx/emqx-enterprise:latest
+- http://localhost:18083/
+- uvicorn server:app --host 0.0.0.0 --port 8080
 
 ## Mục Tiêu & Ý Nghĩa
 
