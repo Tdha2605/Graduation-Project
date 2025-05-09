@@ -308,6 +308,28 @@ def retrieve_bio_image_by_user_id(user_id): # user_id here is the bio_id
     except sqlite3.Error as e:
         print(f"[DB ERROR] Failed to retrieve face image for bio_id {user_id}: {e}")
         return None
+    
+def get_user_info_by_bio_id(bio_id):
+    """Retrieves user validity info based on the bio_id."""
+    if not bio_id: return None
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT bio_id, person_name,
+                       valid_from_date, valid_to_date,
+                       valid_from_time, valid_to_time, active_days_mask,
+                       face_image, finger_image, id_number
+                FROM embeddings
+                WHERE bio_id = ?
+            """, (bio_id,))
+            row = cursor.fetchone()
+            # print(f"[DB DEBUG] User info for bio_id {bio_id}: {dict(row) if row else None}")
+            return row # Returns a Row object or None
+    except sqlite3.Error as e:
+        print(f"[DB ERROR] Failed to retrieve user info for bio_id {bio_id}: {e}")
+        return None
 
 # --- NEW: Functions for Fingerprint Position ---
 def get_user_info_by_finger_position(position):
@@ -320,7 +342,8 @@ def get_user_info_by_finger_position(position):
             cursor.execute("""
                 SELECT bio_id, person_name,
                        valid_from_date, valid_to_date,
-                       valid_from_time, valid_to_time, active_days_mask
+                       valid_from_time, valid_to_time, active_days_mask,
+                       face_image, finger_image, id_number
                 FROM embeddings
                 WHERE finger_position = ?
             """, (position,))

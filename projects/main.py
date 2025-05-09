@@ -191,7 +191,7 @@ class App:
 
         if GPIO_AVAILABLE:
             try:
-                self.door_sensor_handler = Door(sensor_pin=DOOR_SENSOR_PIN, relay_pin=DOOR_RELAY_PIN, mqtt_publish_callback=self.door_state_changed_mqtt, relay_active_high=False)
+                self.door_sensor_handler = Door(sensor_pin=DOOR_SENSOR_PIN, relay_pin=DOOR_RELAY_PIN, relay_active_high=False, mqtt_publish_callback=self.door_state_changed_mqtt)
                 if DEBUG: print("[MAIN INFO] Door handler (sensor & relay) initialized.")
             except Exception as e:
                 if DEBUG: print(f"[MAIN ERROR] Error initializing Door Handler: {e}. Door control/sensor may fail.")
@@ -310,7 +310,6 @@ class App:
             if DEBUG: print("[MAIN DEBUG] Door state changed, but MQTT not ready to publish.")
             return
         door_payload["MacAddress"]  = self.mac
-        door_payload["Token"]       = self.mqtt_manager.token
         door_payload["DeviceTime"]  = datetime.now(timezone.utc).isoformat(timespec='seconds') + "Z"
         if DEBUG: print("[MAIN DEBUG] Door state changed, queueing/publishing payload:", door_payload)
         try:
@@ -623,7 +622,7 @@ class App:
                     temp_id_number = user_info_row['id_number']
                 person_name_to_send = temp_person_name or temp_id_number or bio_id
         if self.mqtt_manager:
-             self.mqtt_manager.send_recognition_success(bio_id, person_name_to_send)
+             self.mqtt_manager.send_recognition_success(bio_id, user_info_row['id_number'], user_info_row['face_image'], user_info_row['finger_image'])
         self.trigger_door_open()
         self.root.after(2000, self.return_to_main_menu)
 
@@ -767,7 +766,7 @@ class App:
         parts = name_key.split('_')
         display_name = parts[0] if parts else name_key
         bio_id = parts[-1] if len(parts) > 1 else name_key
-
+        user_info_row = database.get_user_info_by_bio_id(bio_id)
         if bio_id == display_name and not any(char.isdigit() for char in bio_id):
              if DEBUG: print(f"[MAIN WARN] Could not definitively extract bio_id from key: {name_key}. Using key as bio_id for now.")
         if self.face_info_label and self.face_info_label.winfo_exists():
@@ -790,7 +789,7 @@ class App:
                     self.face_image_label.configure(image=None, text=f"Không tìm thấy ảnh\n{display_name}", font=("Segoe UI", 16), text_color="white")
 
         if self.mqtt_manager:
-             self.mqtt_manager.send_recognition_success(bio_id, display_name)
+             self.mqtt_manager.send_recognition_success(bio_id, user_info_row['id_number'], user_info_row['face_image'], user_info_row['finger_image'])
         self.trigger_door_open()
         self.root.after(FACE_RECOGNITION_TIMEOUT_MS, self.return_to_main_menu)
 

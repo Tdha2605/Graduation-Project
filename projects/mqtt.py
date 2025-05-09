@@ -12,6 +12,8 @@ from paho.mqtt.properties import Properties
 from paho.mqtt.packettypes import PacketTypes
 from database import enqueue_outgoing_message, get_pending_outbox, mark_outbox_sent
 
+from door import Door
+
 try:
     from pyfingerprint.pyfingerprint import PyFingerprint, FINGERPRINT_CHARBUFFER1, FINGERPRINT_CHARBUFFER2
 except ImportError:
@@ -30,14 +32,16 @@ except Exception:
 import database
 
 MQTT_REGISTER_TOPIC = "iot/devices/register_device"
-MQTT_REGISTER_RESPONSE_TOPIC = "iot/server/register_device_resp"
+# MQTT_REGISTER_RESPONSE_TOPIC = "iot/server/register_device_resp"
 MQTT_HEALTHCHECK_TOPIC = "iot/devices/healthcheck"
-MQTT_RECOGNITION_FACE_TOPIC = "iot/devices/recognition_face"
+MQTT_ACCESS_CONTROL = "iot/devices/access"
 MQTT_SYNC_REQUEST_TOPIC = "iot/devices/device_sync_bio"
 MQTT_BIO_ACK_TOPIC = "iot/devices/device_received_bio"
-MQTT_SOS_ALERT_TOPIC = "iot/devices/sos_alert"
-MQTT_PUSH_BIOMETRIC_TOPIC_TEMPLATE = "iot/server/push_biometric/{mac_address}"
-
+MQTT_SOS_ALERT_TOPIC = "iot/devices/sos"
+MQTT_PUSH_BIOMETRIC_TOPIC_TEMPLATE = "iot/server/{mac_address}/push_biometric"
+MQTT_PUSH_BIOMETRIC_TOPIC = "iot/server/{mac_address}/push_biometric"  # Placeholder, will be formatted with MAC address
+MQTT_COMMAND_TOPIC = "iot/server/command/{mac_address}"  # Placeholder, will be formatted with MAC address
+MQTT_COMMAND_RESPONSE_TOPIC = "iot/devices/command_resp"  # Placeholder, will be formatted with MAC address
 
 def generate_hashed_password(mac):
     data = (mac + "navis@salt").encode("utf-8")
@@ -59,6 +63,7 @@ class MQTTManager:
     def __init__(self, mqtt_config, mac, fingerprint_sensor=None, debug=True):
         self.mqtt_config = mqtt_config
         self.mac = mac
+        self.door = Door(sensor_pin=17, relay_pin=27, relay_active_high=False)
         self.username = mqtt_config.get("mqtt_username")
         self.token = mqtt_config.get("token")
         self._client = None
@@ -68,6 +73,7 @@ class MQTTManager:
         self.on_token_received = None
         self.on_connection_status_change = None
         self.push_biometric_topic = MQTT_PUSH_BIOMETRIC_TOPIC_TEMPLATE.format(mac_address=self.mac)
+        self.command_topic = MQTT_COMMAND_TOPIC.format(mac_address=self.mac)
         self.fingerprint_sensor = fingerprint_sensor
         if self.debug:
             if self.token:
@@ -88,15 +94,15 @@ class MQTTManager:
         if self._client is not None:
             if self.debug: print("[MQTT DEBUG] Disconnecting MQTT client...")
             try:
-                if self.connected:
-                    try:
-                        if MQTT_REGISTER_RESPONSE_TOPIC: # Check if topic is defined
-                            self._client.unsubscribe(MQTT_REGISTER_RESPONSE_TOPIC)
-                        if self.push_biometric_topic: # Check if topic is defined
-                            self._client.unsubscribe(self.push_biometric_topic)
-                        if self.debug: print(f"[MQTT INFO] Unsubscribed from MQTT topics.")
-                    except Exception as e:
-                        if self.debug: print(f"[MQTT WARN] Error unsubscribing from topics: {e}")
+                # if self.connected:
+                #     try:
+                #         if MQTT_REGISTER_RESPONSE_TOPIC: # Check if topic is defined
+                #             self._client.unsubscribe(MQTT_REGISTER_RESPONSE_TOPIC)
+                #         if self.push_biometric_topic: # Check if topic is defined
+                #             self._client.unsubscribe(self.push_biometric_topic)
+                #         if self.debug: print(f"[MQTT INFO] Unsubscribed from MQTT topics.")
+                #     except Exception as e:
+                #         if self.debug: print(f"[MQTT WARN] Error unsubscribing from topics: {e}")
                 self._client.loop_stop(force=False)
                 self._client.disconnect()
                 if self.debug: print("[MQTT DEBUG] MQTT client disconnect requested.")
@@ -185,7 +191,7 @@ class MQTTManager:
         self.connecting = False
         if rc == 0:
             if self.debug: print("[MQTT DEBUG] MQTT connection established for registration (rc=0).")
-            client.subscribe(MQTT_REGISTER_RESPONSE_TOPIC, qos=1)
+            # client.subscribe(MQTT_REGISTER_RESPONSE_TOPIC, qos=1)
             # This path is less likely now, as we try HTTP first if token is missing
             if self.token is None: # Should ideally not happen if retrieve_token_via_http was called
                 props = Properties(PacketTypes.PUBLISH)
@@ -222,39 +228,7 @@ class MQTTManager:
             payload_str = msg.payload.decode('utf-8')
             if self.debug: print(f"[MQTT DEBUG] Received message on topic '{topic}': {payload_str[:200]}...")
 
-            if topic == MQTT_REGISTER_RESPONSE_TOPIC:
-                try:
-                    data = json.loads(payload_str)
-                    if data.get("MacAddress", "").lower() != self.mac.lower():
-                        if self.debug: print("[MQTT DEBUG] MAC address mismatch in registration response. Ignoring.")
-                        return
-
-                    new_token = data.get("AccessToken")
-                    new_username_from_resp = data.get("Username") # Assuming server might send username too
-
-                    if new_token:
-                        # Use username from response if available, otherwise keep current one (from HTTP or previous)
-                        final_username = new_username_from_resp if new_username_from_resp else self.username
-                        if not final_username: # If no username at all, this is an issue
-                             if self.debug: print("[MQTT ERROR] No username available for the new token from MQTT_REGISTER_RESPONSE.")
-                             return
-
-                        if self.debug: print(f"[MQTT DEBUG] Registration successful via MQTT, received token: {new_token[:10]} for user {final_username}")
-                        if self.on_token_received:
-                            self.on_token_received(final_username, new_token)
-                        else:
-                            if self.debug: print("[MQTT WARN] on_token_received callback not set. Token may not be saved.")
-                            self.token = new_token
-                            self.username = final_username
-                            self.connect_with_token()
-                    else:
-                        if self.debug: print("[MQTT DEBUG] Registration response received, but no AccessToken found.")
-                except json.JSONDecodeError:
-                    if self.debug: print("[MQTT DEBUG] Failed to decode JSON from registration response.")
-                except Exception as e:
-                    if self.debug: print(f"[MQTT DEBUG] Error processing registration response: {e}")
-
-            elif topic == self.push_biometric_topic:
+            if topic == self.push_biometric_topic:
                 if not self.connected or not self.token:
                     if self.debug: print("[MQTT WARN] Received biometric push but not connected with token. Ignoring.")
                     return
@@ -384,6 +358,60 @@ class MQTTManager:
                     if self.debug: print("[MQTT DEBUG] JSON decode error in biometric push")
                 except Exception as e:
                     if self.debug: print(f"[MQTT DEBUG] Error in on_message (biometric push processing): {e}")
+            elif topic == self.command_topic:
+                # recv {"MacAddress": "DeviceTest0001","CmdId": 12,"CmdTime: "2025-03-25T06:40:39.2256267Z"// UTC Time"CmdType": "REMOTE_OPEN ","CmdTimeout": 30// seconds}
+                # send back {"MacAddress": "DeviceTest0001","CmdId": 12,"DeviceTime": "2025-03-25T06:40:39.2256267Z"}
+                
+                if self.debug: print(f"[MQTT DEBUG] Received command on topic '{topic}': {payload_str[:200]}...")
+                try:
+                    command = json.loads(payload_str)
+                    if not isinstance(command, dict):
+                        if self.debug: print("[MQTT WARN] Invalid command payload: Expected a JSON object.")
+                        return
+
+                    mac_address = command.get("MacAddress")
+                    cmd_id = command.get("CmdId")
+                    cmd_type = command.get("CmdType")
+                    cmd_time = command.get("CmdTime")
+                    cmd_timeout = command.get("CmdTimeout", 30)
+
+                    if mac_address != self.mac:
+                        if self.debug: print(f"[MQTT WARN] MAC address mismatch in command. Ignoring.")
+                        return
+
+                    if cmd_type == "REMOTE_OPEN":
+                        # Handle remote open command
+                        if self.debug: print(f"[MQTT INFO] Processing REMOTE_OPEN command with ID {cmd_id}.")
+                        # check devicetime < timeout + Cmdtime
+                        if cmd_time:
+                            try:
+                                cmd_time_dt = datetime.fromisoformat(cmd_time.replace("Z", "+00:00"))
+                                current_time = datetime.now(timezone.utc)
+                                if cmd_timeout > 0 and (current_time - cmd_time_dt).total_seconds() > cmd_timeout:
+                                    if self.debug: print(f"[MQTT WARN] Command timeout exceeded. Ignoring command.")
+                                    return
+                            except ValueError:
+                                if self.debug: print(f"[MQTT ERROR] Invalid CmdTime format. Ignoring command.")
+                                return
+                        self.door.open_door()
+                        response_payload = {
+                            "MacAddress": self.mac,
+                            "CmdId": cmd_id,
+                            "DeviceTime": datetime.now(timezone.utc).isoformat(timespec='seconds') + "Z"
+                        }
+                        response_payload_str = json.dumps(response_payload, separators=(",", ":"))
+                        if self.debug: print(f"[MQTT DEBUG] Sending command response: {response_payload_str}")
+                        ret = self.client.publish(MQTT_COMMAND_RESPONSE_TOPIC, payload=response_payload_str, qos=1)
+                        print(f"[MQTT DEBUG] Command response published with return code: {ret.rc}")
+                        if ret.rc != mqtt.MQTT_ERR_SUCCESS:
+                            if self.debug: print(f"[MQTT ERROR] Failed to publish command response: {ret.rc}")
+                            
+                    else:
+                        if self.debug: print(f"[MQTT WARN] Unknown command type: {cmd_type}. Ignoring.")
+                except json.JSONDecodeError:
+                    if self.debug: print("[MQTT DEBUG] JSON decode error in command processing")
+                except KeyError as e:
+                    if self.debug: print(f"[MQTT WARN] Missing key in command payload: {e}")
 
         except Exception as e:
             if self.debug: print(f"[MQTT ERROR] Unhandled error in on_message: {e}")
@@ -456,6 +484,7 @@ class MQTTManager:
             self.connected = True
             if self.debug: print(f"[MQTT DEBUG] MQTT connected with token successfully. Subscribing to {self.push_biometric_topic}")
             client.subscribe(self.push_biometric_topic, qos=1)
+            client.subscribe(self.command_topic, qos=1)
             if self.on_connection_status_change:
                 self.on_connection_status_change(True)
             self.flush_outbox()
@@ -475,17 +504,17 @@ class MQTTManager:
     def send_healthcheck(self):
         if self._client and self.token and self.connected:
             device_time = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            heartbeat = {"MacAddress": self.mac, "Token": self.token, "DeviceTime": device_time}
+            # MacAdddress: mac address thiết bị DeviceTime: Datetime Version: integer - phiên bản thiết bị "BioAuthType": {"IsFace": true,             // default: true"IsFinger": true,   // default: true"IsIdCard": true,         // default: true"IsIris": true,               // default: true"Direction": "IN"                     // default: IN}
+            heartbeat = {"MacAddress": self.mac, "DeviceTime": device_time, "Version": "1", "BioAuthType ": {"IsFace": True, "IsFinger": True, "IsIdCard": True, "IsIris": False}, "Direction": "IN"}
             props = Properties(PacketTypes.PUBLISH)
             props.UserProperty = [("MacAddress", self.mac)]
             self.client.publish(MQTT_HEALTHCHECK_TOPIC, payload=json.dumps(heartbeat, separators=(",", ":")), properties=props, qos=0)
 
-    def send_recognition_success(self, bio_id, person_name=""):
-        user_id = bio_id
-        name = person_name or user_id
+    def send_recognition_success(self, bio_id, id_number, face_image, finger_image, iris_image = '', Abnormal = False, direction = "IN"):
+        
         device_time = datetime.now(timezone.utc).isoformat(timespec='seconds') + "Z"
-        payload_dict = {"MacAddress": self.mac, "bioId": user_id, "personName": name, "DeviceTime": device_time, "Status": "Recognized"}
-        self._publish_or_queue(MQTT_RECOGNITION_FACE_TOPIC, payload_dict, qos=1, user_properties=[("MacAddress", self.mac)])
+        payload_dict = {"MacAddress": self.mac, "BioId": bio_id, "IdNumber" : id_number, "AccessTime": device_time, "Direction" : direction, "FaceImage": face_image, "FingerImage": finger_image, "IrisImage": iris_image, "Abnormal": Abnormal}
+        self._publish_or_queue(MQTT_ACCESS_CONTROL, payload_dict, qos=1, user_properties=[("MacAddress", self.mac)])
 
     def send_device_sync(self):
         if self._client and self.connected:

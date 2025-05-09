@@ -2,7 +2,7 @@ import RPi.GPIO as GPIO
 from datetime import datetime, timezone
 
 class Door:
-    def __init__(self, sensor_pin, relay_pin, mqtt_publish_callback, debounce_time=300, relay_active_high=False):
+    def __init__(self, sensor_pin, relay_pin, debounce_time=300, relay_active_high=False, mqtt_publish_callback=None):
         """
         Initialize the door sensor and relay.
 
@@ -51,14 +51,14 @@ class Door:
 
     def _callback(self, channel):
         # Assume: GPIO.HIGH means door is OPEN; GPIO.LOW means door is CLOSED.
-        state = "OPEN" if GPIO.input(self.sensor_pin) == GPIO.HIGH else "CLOSED"
+        state = "OPEN" if GPIO.input(self.sensor_pin) == GPIO.HIGH else "CLOSE"
         if state != self.last_state:
             self.last_state = state
             payload = {
                 "MacAddress": None,  # To be filled by the external callback.
+                "DeviceTime": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "DoorStatus": state,
-                "Token": None,       # To be filled by the external callback.
-                "DeviceTime": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                "Abnormal": False,
             }
             # Invoke the callback with the payload.
             self.mqtt_publish_callback(payload)
