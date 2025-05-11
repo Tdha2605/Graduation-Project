@@ -64,7 +64,7 @@ def update_fp_frame_with_failure(fp_frame, message="Không tìm thấy vân tay 
     icon_label.pack(pady=(10, 10), expand=True, fill="both")
     text_label = ctk.CTkLabel(fp_frame, text=message, font=ctk.CTkFont(size=18, weight="bold"), text_color="red")
     text_label.pack(pady=(0, 20))
-    fp_frame.after(2500, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close() if on_close else None))
+    fp_frame.after(1000, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close() if on_close else None))
 
 
 def set_prompt_state(fp_frame, cancel_callback):
