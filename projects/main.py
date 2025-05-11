@@ -604,15 +604,16 @@ class App:
         finger_image_b64 = None
 
         if user_info_row:
-            person_name_to_send = user_info_row.get('person_name') or user_info_row.get('id_number') or bio_id
-            id_number_to_send = user_info_row.get('id_number')
-            face_image_b64 = user_info_row.get('face_image')
+            display_name = user_info_row['person_name'] or user_info_row['id_number'] or display_name # Assuming person_name exists
+            id_number_to_send = user_info_row['id_number']
+            face_image_b64 = user_info_row['face_image']
+            finger_image_b64 = user_info_row['finger_image']
         else:
             if DEBUG: print(f"[MAIN WARN] No user_info_row found for bioId: {bio_id}")
-            
-        if self.mqtt_manager:
-             self.mqtt_manager.send_recognition_success(bio_id, id_number_to_send, face_image_b64, finger_image_b64)
         self.trigger_door_open()
+        if self.mqtt_manager:
+            
+             self.mqtt_manager.send_recognition_success(bio_id, id_number_to_send, face_image_b64, finger_image_b64)
         self.root.after(2000, self.return_to_main_menu)
 
     def handle_fingerprint_failure(self):
@@ -675,10 +676,10 @@ class App:
         finger_image_b64 = None
 
         if user_info_row:
-            display_name = user_info_row.get('person_name') or user_info_row.get('id_number') or display_name
-            id_number_to_send = user_info_row.get('id_number')
-            face_image_b64 = user_info_row.get('face_image')
-            finger_image_b64 = user_info_row.get('finger_image')
+             display_name = user_info_row['person_name'] or user_info_row['id_number'] or display_name # Assuming person_name exists
+             id_number_to_send = user_info_row['id_number']
+             face_image_b64 = user_info_row['face_image']
+             finger_image_b64 = user_info_row['finger_image']
         else:
              if DEBUG: print(f"[MAIN WARN] No user_info_row found for bioId from face key: {bio_id}")
 
@@ -706,10 +707,10 @@ class App:
                  except Exception as e:
                     if DEBUG: print(f"[MAIN ERROR] Failed to display/convert captured frame: {e}")
                     self.face_image_label.configure(image=None, text=f"Không tìm thấy ảnh\n{display_name}", font=("Segoe UI", 16), text_color="white")
-
+        self.trigger_door_open()
         if self.mqtt_manager:
              self.mqtt_manager.send_recognition_success(bio_id, id_number_to_send, face_image_b64, finger_image_b64)
-        self.trigger_door_open()
+        #self.trigger_door_open()
         self.root.after(FACE_RECOGNITION_TIMEOUT_MS, self.return_to_main_menu)
 
     def handle_recognition_failure(self, reason="Unknown"):
