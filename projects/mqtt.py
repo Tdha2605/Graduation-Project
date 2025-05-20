@@ -431,7 +431,6 @@ class MQTTManager:
                         response_payload = {
                             "MacAddress": self.mac,
                             "CmdId": cmd_id,
-                            "Status": "SUCCESS", # Hoặc FAILED nếu action_performed là False và muốn báo lỗi
                             "DeviceTime": datetime.now(GMT_PLUS_7).isoformat(timespec='seconds')
                         }
                         if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) Sending command response: {response_payload}")
@@ -525,14 +524,13 @@ class MQTTManager:
                 self.token = None # Xóa token
                 self.username = None
                 self.device_info_sent_this_session = False
-                if self.on_token_received: # Báo cho App biết token không còn giá trị
+                if self.on_token_received: 
                     self.on_token_received(None, None) 
             if self.on_connection_status_change:
                 self.on_connection_status_change(False)
 
-    # --- CÁC HÀM GỬI TIN NHẮN: GIỮ NGUYÊN PAYLOAD GỐC ---
-    def send_device_info(self): # Giữ nguyên payload gốc
-        if self._client and self.connected: # Không cần token ở đây vì xác thực qua connect
+    def send_device_info(self): 
+        if self._client and self.connected: 
             room_name = self.mqtt_config.get("room", "N/A")
             device_version = "1.0.0" 
 
@@ -543,58 +541,49 @@ class MQTTManager:
                 "ReportTime": datetime.now(GMT_PLUS_7).isoformat(timespec='seconds')
             }
             if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) Sending Device Info: {info_payload} to {MQTT_DEVICE_INFO_TOPIC}")
-            # UserProperty vẫn hữu ích cho server filter/route mà không cần parse payload
             self._publish_or_queue(MQTT_DEVICE_INFO_TOPIC, info_payload, qos=1, user_properties=[("MacAddress", self.mac)])
         elif self.debug:
             print(f"[MQTT WARN] (MAC: {self.mac}) Cannot send Device Info: Client not connected.")
 
-    def send_healthcheck(self): # Giữ nguyên payload gốc
+    def send_healthcheck(self): 
         if self._client and self.connected:
             device_time_gmt7 = datetime.now(GMT_PLUS_7).isoformat(timespec='seconds')
             room_name = self.mqtt_config.get("room", "N/A")
             device_version = "1.0.0"
             
             bio_auth_support = {
-                "IsFace": True, # Giả sử
+                "IsFace": True, 
                 "IsFinger": bool(self.fingerprint_sensor and PyFingerprint),
-                "IsIdCard": bool(self.rfid_sensor), # CẬP NHẬT CHO RFID
+                "IsIdCard": bool(self.rfid_sensor), 
                 "IsIris": False
             }
             heartbeat = {
                 "MacAddress": self.mac, 
                 "DeviceTime": device_time_gmt7, 
                 "Version": device_version, 
-                "Room": room_name, # Thêm room vào healthcheck
+                "Room": room_name, 
                 "BioAuthType": bio_auth_support, 
-                "Direction": "IN" # Hoặc lấy từ config
+                "Direction": "IN" 
             }
-            # Không cần UserProperty vì MAC đã có trong payload
-            self._publish_or_queue(MQTT_HEALTHCHECK_TOPIC, heartbeat, qos=0) # QoS 0 cho healthcheck
-            # if self.debug: print(f"[MQTT TRACE] (MAC: {self.mac}) Healthcheck sent.") # Giảm log
-        # else:
-            # if self.debug: print(f"[MQTT TRACE] (MAC: {self.mac}) Healthcheck skipped (not connected).")
+            self._publish_or_queue(MQTT_HEALTHCHECK_TOPIC, heartbeat, qos=0) 
 
 
-    # ĐỔI TÊN HÀM NÀY VÀ THAM SỐ ĐỂ PHÙ HỢP HƠN
-    # HÀM NÀY ĐƯỢC GIỮ NGUYÊN TỪ FILE GỐC CỦA BẠN, CHỈ THAY ĐỔI AuthMethod cho IDCARD
-    # mqtt.py
     def send_recognition_event(self, bio_id, id_number, auth_method, auth_data, status, face_image_b64=None, finger_image_b64=None, iris_image_b64 = '', abnormal = False, direction = "IN"):
         device_time_gmt7 = datetime.now(GMT_PLUS_7).isoformat(timespec='seconds')
         
-        person_name_to_send = "Unknown" # Đổi tên biến để tránh nhầm lẫn
-        id_number_to_send = id_number # Giữ lại id_number ban đầu nếu có
+        person_name_to_send = "Unknown" 
+        id_number_to_send = id_number 
 
         if bio_id:
-            user_details_row = database.get_user_info_by_bio_id(bio_id) # user_details_row là sqlite3.Row
+            user_details_row = database.get_user_info_by_bio_id(bio_id) 
             if user_details_row:
-                # SỬA CÁCH TRUY CẬP Ở ĐÂY
+                
                 if 'person_name' in user_details_row.keys() and user_details_row['person_name']:
                     person_name_to_send = user_details_row['person_name']
                 
                 if not id_number_to_send and 'id_number' in user_details_row.keys() and user_details_row['id_number']: # Chỉ lấy từ DB nếu chưa có
                     id_number_to_send = user_details_row['id_number']
                 
-                # Lấy ảnh từ DB nếu cần và chưa có từ tham số (ví dụ, nếu face_image_b64 là None)
                 if auth_method.upper() == "FACE" and status.upper() == "SUCCESS" and not face_image_b64:
                     if 'face_image' in user_details_row.keys():
                         face_image_b64 = user_details_row['face_image']
@@ -607,21 +596,20 @@ class MQTTManager:
             "MacAddress": self.mac, 
             "BioId": bio_id, 
             "IdNumber" : id_number_to_send, 
-            "PersonName": person_name_to_send, 
-            "AuthMethod": auth_method.upper(), 
-            "AuthData": auth_data, 
-            "Status": status.upper(), 
             "AccessTime": device_time_gmt7, 
             "Direction" : direction, 
+            "FaceImg"   : face_image_b64,
+            "FingerImg" : finger_image_b64,
+            "IrisImg"   : iris_image_b64,
             "Abnormal": abnormal
         }
         
         if auth_method.upper() == "FACE" and status.upper() == "SUCCESS" and face_image_b64:
-            payload_dict["FaceImage"] = face_image_b64
+            payload_dict["FaceImg"] = face_image_b64
         if auth_method.upper() == "FINGER" and status.upper() == "SUCCESS" and finger_image_b64:
-            payload_dict["FingerImage"] = finger_image_b64
-        if auth_method.upper() == "IRIS" and status.upper() == "SUCCESS" and iris_image_b64: # Dù không dùng nhưng giữ lại
-            payload_dict["IrisImage"] = iris_image_b64
+            payload_dict["FingerImg"] = finger_image_b64
+        if auth_method.upper() == "IRIS" and status.upper() == "SUCCESS" and iris_image_b64: 
+            payload_dict["IrisImg"] = iris_image_b64
         
         if self.debug:
             log_payload = {k: (v[:30]+'...' if isinstance(v, str) and k in ["FaceImage", "FingerImage", "IrisImage"] and v and len(v)>30 else v) for k,v in payload_dict.items()}
@@ -630,9 +618,9 @@ class MQTTManager:
         self._publish_or_queue(MQTT_ACCESS_CONTROL, payload_dict, qos=1, user_properties=[("MacAddress", self.mac)])
 
 
-    def send_device_sync_request(self): # Giữ nguyên payload gốc (không có token trong payload)
+    def send_device_sync_request(self): 
         if self._client and self.connected:
-            payload_dict = {"MacAddress": self.mac} # Chỉ có MacAddress
+            payload_dict = {"MacAddress": self.mac, "Token" : self.token} 
             if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) Sending Device Sync Request: {payload_dict}")
             self._publish_or_queue(MQTT_SYNC_REQUEST_TOPIC, payload_dict, qos=1, user_properties=[("MacAddress", self.mac)])
         elif self.debug:
@@ -651,7 +639,7 @@ class MQTTManager:
             "MacAddress": self.mac, 
             # "Token": self.token, # BỎ TOKEN KHỎI PAYLOAD
             "DeviceTime": device_time_gmt7, 
-            "AlertType": "SOS_ACTIVATED"
+            "AlertType": "SOS"
         }
         self._publish_or_queue(MQTT_SOS_ALERT_TOPIC, payload_dict, qos=1, user_properties=[("MacAddress", self.mac)])
         if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) SOS alert queued/published to {MQTT_SOS_ALERT_TOPIC}.")

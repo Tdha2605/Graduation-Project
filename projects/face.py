@@ -109,7 +109,7 @@ def open_face_recognition(on_recognition=None, on_failure_callback=None, parent_
     face_recog_stop_event.clear()
     picam2 = Picamera2()
     try:
-        preview_config = picam2.create_preview_configuration(main={"size": (640, 480), "format": "RGB888"})
+        preview_config = picam2.create_preview_configuration(main={"size": (400, 300), "format": "RGB888"})
         picam2.configure(preview_config)
         picam2.start()
         print("[DEBUG] Camera configured successfully at time ", datetime.now(timezone.utc).astimezone())

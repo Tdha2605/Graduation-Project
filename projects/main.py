@@ -65,13 +65,13 @@ DEBUG = True
 BG_COLOR = "#F5F5F5"
 BUTTON_FG = "#333333"
 BUTTON_FONT = ("Segoe UI", 24)
-BUTTON_WIDTH = 250
-BUTTON_HEIGHT = 250
+BUTTON_WIDTH = 350
+BUTTON_HEIGHT = 350
 PAD_X = 15
 PAD_Y = 15
 CONFIG_FILE = "mqtt_config.json"
-FACE_RECOGNITION_TIMEOUT_MS = 3000 
-DOOR_OPEN_DURATION_MS = 7000
+FACE_RECOGNITION_TIMEOUT_MS = 2000 
+DOOR_OPEN_DURATION_MS = 10000
 HEALTHCHECK_INTERVAL_MS = 10000
 
 FINGERPRINT_PORT = '/dev/ttyAMA0'
@@ -182,25 +182,25 @@ class App:
         self.last_rfid_auth_time = 0
         self.rfid_scan_active = False
 
-        self.connected_image = load_image("images/connected.jpg", (30, 30))
-        self.disconnected_image = load_image("images/disconnected.jpg", (30, 30))
+        self.connected_image = load_image("images/connected.jpg", (50, 50))
+        self.disconnected_image = load_image("images/disconnected.jpg", (50, 50))
         self.bg_photo = load_image("images/background.jpeg", (1024, 600))
         self.face_icon_img = load_image("images/face.png", (BUTTON_WIDTH-80, BUTTON_HEIGHT-100))
         self.fingerprint_icon_img = load_image("images/fingerprint.png", (BUTTON_WIDTH-80, BUTTON_HEIGHT-100))
         self.rfid_icon_img = load_image("images/rfid.png", (BUTTON_WIDTH-80, BUTTON_HEIGHT-100))
-        self.sync_icon_img = load_image("images/sync.png", (28, 28))
+        self.sync_icon_img = load_image("images/sync.png", (40, 40))
 
         self.root.configure(fg_color=BG_COLOR)
         self.show_background()
         
         self.connection_status_label = ctk.CTkLabel(root, image=self.disconnected_image, text="Chưa kết nối", font=("Segoe UI", 11), text_color="red", compound="left")
-        self.connection_status_label.place(relx=0.015, rely=0.97, anchor="sw")
+        self.connection_status_label.place(relx=0.04, rely=0.95, anchor="sw")
         
         self.create_config_button()
         
         self.sync_button = ctk.CTkButton(self.root, image=self.sync_icon_img, text="", width=40, height=40, 
                                          fg_color="transparent", hover_color="#E0E0E0", command=self.request_manual_sync)
-        self.sync_button.place(relx=0.06, rely=0.015, anchor="nw")
+        self.sync_button.place(relx=0.04, rely=0.02, anchor="nw")
         
         self.initialize_fingerprint_sensor()
         self.initialize_rfid_sensor()
@@ -380,7 +380,7 @@ class App:
         
         image_to_show = self.connected_image if is_connected else self.disconnected_image
         text_color = "#2ECC71" if is_connected else "#E74C3C"
-        status_text = "  Đã kết nối Server" if is_connected else "  Mất kết nối Server"
+        status_text = "" if is_connected else ""
         
         self.connection_status_label.configure(image=image_to_show, text=status_text, text_color=text_color)
 
@@ -578,9 +578,9 @@ class App:
                                       command=self.confirm_reconfigure_device,
                                       width=100, height=38, 
                                       font=("Segoe UI", 15), text_color="white",
-                                      fg_color="#6C757D", hover_color="#5A6268", corner_radius=6)
+                                      fg_color="#6C87D0", hover_color="#5A6268", corner_radius=6)
         config_button._button_id = 'config_button'
-        config_button.place(relx=0.985, rely=0.015, anchor="ne")
+        config_button.place(relx=0.98, rely=0.015, anchor="ne")
 
     def confirm_reconfigure_device(self):
         result = messagebox.askyesno("Xác Nhận Cấu Hình Lại", 
@@ -674,7 +674,7 @@ class App:
         button_frame.grid(row=4, column=0, columnspan=2, pady=(30, 20))
         
         back_button = ctk.CTkButton(button_frame, text="QUAY LẠI", width=140, height=45, 
-                                    font=("Segoe UI", 16), fg_color="#6C757D", hover_color="#5A6268", 
+                                    font=("Segoe UI", 16), fg_color="#6C87D", hover_color="#5A6268", 
                                     text_color="white", command=self.go_back)
         back_button.pack(side="left", padx=15)
         
@@ -756,7 +756,7 @@ class App:
         menu_options = [
             (self.face_icon_img, "KHUÔN MẶT", self.start_face_recognition_flow),
             (self.fingerprint_icon_img, "VÂN TAY", self.start_fingerprint_scan_flow),
-            (self.rfid_icon_img, "THẺ RFID", self.start_rfid_scan_flow),
+            (self.rfid_icon_img, "THẺ TỪ", self.start_rfid_scan_flow),
         ]
         
         for idx, (icon, label_text, command_func) in enumerate(menu_options):
@@ -795,8 +795,9 @@ class App:
          self.clear_frames(clear_face_ui=True, clear_rfid_ui=True)
 
          fp_ui_host_frame = ctk.CTkFrame(self.root, fg_color="transparent")
+         fp_ui_host_frame.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.8, relheight=0.8)
          fp_ui_host_frame._owner_module = 'fingerprint_ui'
-         fp_ui_host_frame.pack(expand=True, fill="both")
+         #fp_ui_host_frame.pack(expand=True, fill="both")
 
          fingerprint.open_fingerprint_prompt(
              parent=fp_ui_host_frame,
@@ -812,10 +813,10 @@ class App:
             self.show_authentication_result_screen(
                 success=False,
                 message_main="LỖI XỬ LÝ DỮ LIỆU",
-                message_sub="Không nhận được thông tin người dùng hợp lệ.",
-                user_image_ctk=load_image("images/fingerprint_failure.png", (150,150))
+                message_sub="KHÔNG LẤY ĐƯỢC THÔNG TIN NGƯỜI DÙNG",
+                user_image_ctk=load_image("images/fp_error.png", (150,150))
             )
-            self.root.after(2500, self.return_to_main_menu_screen)
+            self.root.after(1500, self.return_to_main_menu_screen)
             return
 
         user_info = user_info_from_module
@@ -849,7 +850,7 @@ class App:
         self.show_authentication_result_screen(
             success=True,
             message_main=f"XIN CHÀO, {person_name.upper()}!",
-            message_sub="Xác thực bằng vân tay thành công.",
+            message_sub="XÁC THỰC BẰNG VÂN TAY THÀNH CÔNG",
             user_image_ctk=get_ctk_image_from_db(actual_bio_id, size=(180,180))
         )
         
@@ -860,10 +861,10 @@ class App:
         self.show_authentication_result_screen(
             success=False,
             message_main="XÁC THỰC VÂN TAY THẤT BẠI",
-            message_sub=f"Lý do: {reason}.\nVui lòng thử lại.",
-            user_image_ctk=load_image("images/fingerprint_failure.png", (150,150))
+            message_sub=f"",
+            user_image_ctk=load_image("images/fp_error.png", (150,150))
         )
-        self.root.after(2500, self.return_to_main_menu_screen)
+        self.root.after(1500, self.return_to_main_menu_screen)
 
     def start_rfid_scan_flow(self):
         if not self.rfid_sensor:
@@ -917,8 +918,8 @@ class App:
                 self.show_authentication_result_screen(
                     success=False,
                     message_main="TRUY CẬP BỊ TỪ CHỐI",
-                    message_sub=f"{person_name}\n(Ngoài giờ hoặc đã hết hạn)",
-                    user_image_ctk=get_ctk_image_from_db(actual_bio_id, size=(180,180))
+                    message_sub=f"{person_name}\nNGOÀI GIỜ HOẶC HẾT HẠN",
+                    user_image_ctk=get_ctk_image_from_db(actual_bio_id, size=(400,250))
                 )
                 if self.mqtt_manager:
                     self.mqtt_manager.send_recognition_event(
@@ -947,8 +948,8 @@ class App:
             self.show_authentication_result_screen(
                 success=True,
                 message_main=f"XIN CHÀO, {person_name.upper()}!",
-                message_sub="Xác thực bằng thẻ RFID thành công.",
-                user_image_ctk=get_ctk_image_from_db(actual_bio_id, size=(180,180))
+                message_sub="XÁC THỰC BẰNG THẺ TỪ THÀNH CÔNG",
+                user_image_ctk=load_image("images/rfid_success.png", (400,250))
             )
         else:
             if DEBUG: print(f"[MAIN WARN] RFID UID {uid_hex_from_card} not found in DB or not active for this device.")
@@ -956,8 +957,8 @@ class App:
             self.show_authentication_result_screen(
                 success=False,
                 message_main="THẺ KHÔNG HỢP LỆ",
-                message_sub=f"UID: {uid_hex_from_card}\nThẻ chưa được đăng ký hoặc không có quyền truy cập.",
-                user_image_ctk=load_image("images/rfid_unknown.png", (150,150))
+                message_sub=f"THẺ CHƯA ĐƯỢC ĐĂNG KÝ",
+                user_image_ctk=load_image("images/rfid_unknown.png", (400,250))
             )
             if self.mqtt_manager:
                  self.mqtt_manager.send_recognition_event(
@@ -989,7 +990,7 @@ class App:
         
         if not face.face_db:
             messagebox.showinfo("Không Tìm Thấy Dữ Liệu Khuôn Mặt", 
-                                f"Không có dữ liệu khuôn mặt nào đang hoạt động cho thiết bị này.\n"
+                                f"Không có dữ liệu khuôn mặt trong khoảng thời gian hiện tại\n"
                                 "Vui lòng đồng bộ dữ liệu từ Server hoặc đăng ký mới.", 
                                 parent=self.root)
             self.root.after(100, self.return_to_main_menu_screen)
@@ -997,9 +998,9 @@ class App:
 
         if not self.face_ui_container or not self.face_ui_container.winfo_exists():
             self.face_ui_container = ctk.CTkFrame(self.root, fg_color="transparent")
-            self.face_ui_container.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.9, relheight=0.9)
+            self.face_ui_container.place(relx=0.5, rely=0.5, anchor="center", relwidth=0.8, relheight=0.8)
 
-            self.face_info_label = ctk.CTkLabel(self.face_ui_container, text="", font=("Segoe UI", 18), text_color="#4A4A4A", wraplength=800)
+            self.face_info_label = ctk.CTkLabel(self.face_ui_container, text="", font=("Segoe UI", 20), text_color="#4A4A4A", wraplength=800)
             self.face_info_label.pack(pady=(10,5), anchor="n")
 
             self.face_image_label = ctk.CTkLabel(self.face_ui_container, text="", fg_color="black")
@@ -1009,8 +1010,8 @@ class App:
             self.face_name_label.pack(pady=(5,10), anchor="s")
         
         self.face_info_label.configure(text="")
-        self.face_image_label.configure(text="Đang khởi tạo Camera...", image=None, font=("Segoe UI", 18, "italic"), text_color="white", width=640, height=480)
-        self.face_name_label.configure(text="Vui lòng nhìn thẳng vào Camera")
+        self.face_image_label.configure(text="ĐANG XÁC THỰC", image=None, font=("Segoe UI", 18, "italic"), text_color="white", width=480, height=360)
+        self.face_name_label.configure(text="VUI LÒNG NHÌN THẲNG VÀO CAMERA")
 
         if DEBUG: print("[MAIN DEBUG] Starting face recognition process (thread will be created by face.py)...")
         
@@ -1038,12 +1039,12 @@ class App:
             if not database.is_user_access_valid_now(actual_bio_id, self.mac):
                 if DEBUG: print(f"[MAIN WARN] Access DENIED for {person_name} (BioID: {actual_bio_id}) from face. Outside valid schedule.")
                 if self.face_info_label: self.face_info_label.configure(text="TRUY CẬP BỊ TỪ CHỐI", text_color="#E74C3C")
-                if self.face_name_label: self.face_name_label.configure(text=f"{person_name}\n(Ngoài giờ hoặc đã hết hạn)", text_color="#E74C3C")
+                if self.face_name_label: self.face_name_label.configure(text=f"{person_name}\nNGOÀI GIỜ HOẶC HẾT HẠN", text_color="#E74C3C")
                 
                 if captured_frame_array is not None:
                     try:
                         captured_pil_image = Image.fromarray(captured_frame_array)
-                        error_img_ctk = CTkImage(light_image=captured_pil_image, dark_image=captured_pil_image, size=(240,180))
+                        error_img_ctk = CTkImage(light_image=captured_pil_image, dark_image=captured_pil_image, size=(400,400))
                         if self.face_image_label: self.face_image_label.configure(image=error_img_ctk, text="")
                     except Exception as e_img_err:
                         if DEBUG: print(f"[MAIN ERROR] Failed to display captured frame on DENIED: {e_img_err}")
@@ -1061,17 +1062,17 @@ class App:
             if self.face_info_label: self.face_info_label.configure(text="XÁC THỰC THÀNH CÔNG", text_color="#2ECC71")
             if self.face_name_label: self.face_name_label.configure(text=f"XIN CHÀO, {person_name.upper()}!", text_color="#2ECC71")
             
-            profile_ctk_image = get_ctk_image_from_db(actual_bio_id, size=(320,240))
+            profile_ctk_image = get_ctk_image_from_db(actual_bio_id, size=(300,250))
             if not profile_ctk_image and captured_frame_array is not None:
                  try:
                     pil_img = Image.fromarray(captured_frame_array)
-                    pil_img_resized = pil_img.resize((320,240), Image.Resampling.LANCZOS)
-                    profile_ctk_image = CTkImage(light_image=pil_img_resized, dark_image=pil_img_resized, size=(320,240))
+                    pil_img_resized = pil_img.resize((300,250), Image.Resampling.LANCZOS)
+                    profile_ctk_image = CTkImage(light_image=pil_img_resized, dark_image=pil_img_resized, size=(300,250))
                  except Exception as e_img:
                     if DEBUG: print(f"[MAIN ERROR] Failed to process captured frame for display: {e_img}")
             
             if self.face_image_label and profile_ctk_image:
-                 self.face_image_label.configure(image=profile_ctk_image, text="", width=320, height=240)
+                 self.face_image_label.configure(image=profile_ctk_image, text="", width=300, height=250)
             elif self.face_image_label:
                  self.face_image_label.configure(image=None, text=f"Ảnh không có sẵn\n{person_name}", font=("Segoe UI", 16), text_color="grey")
 
@@ -1081,7 +1082,7 @@ class App:
             if not final_face_image_b64_to_send and captured_frame_array is not None:
                 try:
                     buffered = io.BytesIO()
-                    Image.fromarray(captured_frame_array).save(buffered, format="JPEG", quality=85)
+                    Image.fromarray(captured_frame_array).save(buffered, format="JPEG", quality=8)
                     final_face_image_b64_to_send = base64.b64encode(buffered.getvalue()).decode('utf-8')
                 except Exception as e_b64:
                     if DEBUG: print(f"[MAIN ERROR] Failed to encode captured frame to Base64: {e_b64}")
@@ -1102,8 +1103,8 @@ class App:
             if captured_frame_array is not None and self.face_image_label:
                 try:
                     pil_img_unknown = Image.fromarray(captured_frame_array)
-                    pil_img_unknown_resized = pil_img_unknown.resize((320,240), Image.Resampling.LANCZOS)
-                    unknown_face_ctk = CTkImage(light_image=pil_img_unknown_resized, dark_image=pil_img_unknown_resized, size=(320,240))
+                    pil_img_unknown_resized = pil_img_unknown.resize((300,200), Image.Resampling.LANCZOS)
+                    unknown_face_ctk = CTkImage(light_image=pil_img_unknown_resized, dark_image=pil_img_unknown_resized, size=(300,200))
                     self.face_image_label.configure(image=unknown_face_ctk, text="")
                 except Exception as e_img_unk:
                     if DEBUG: print(f"[MAIN ERROR] Failed to display captured unknown face: {e_img_unk}")
@@ -1150,7 +1151,7 @@ class App:
         
         sub_text_color = "#555555" if success else "#777777"
         ctk.CTkLabel(self.frame_result_display, text=message_sub, 
-                     font=("Segoe UI", 17), 
+                     font=("Segoe UI", 25), 
                      text_color=sub_text_color, wraplength=550, justify="center").pack()
 
     def _sos_button_state_changed_callback(self, channel):

@@ -23,8 +23,8 @@ def update_fp_frame_with_error(fp_frame, message="Lỗi phần cứng", on_close
         img_path = os.path.join(os.path.dirname(__file__), "images", "fp_failure.png")
         img = Image.open(img_path)
     except Exception:
-        img = Image.new("RGB", (150, 150), color="orange")
-    ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(150, 150))
+        img = Image.new("RGB", size = (342,200), color="orange")
+    ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size = (342,200))
     lbl_img = ctk.CTkLabel(fp_frame, image=ctk_img, text="")
     lbl_img.image = ctk_img
     lbl_img.pack(pady=(20, 10), expand=True)
@@ -40,8 +40,8 @@ def update_fp_frame_with_success(fp_frame, user_name="", on_close=None):
         img_path = os.path.join(os.path.dirname(__file__), "images", "fp_success.png")
         success_img = Image.open(img_path)
     except Exception:
-        success_img = Image.new("RGB", (150, 150), color="green")
-    ctk_success = ctk.CTkImage(light_image=success_img, dark_image=success_img, size=(150, 150))
+        success_img = Image.new("RGB", size = (342,200), color="green")
+    ctk_success = ctk.CTkImage(light_image=success_img, dark_image=success_img, size = (342,200))
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_success, text="")
     icon_label.image = ctk_success
     icon_label.pack(pady=(20, 10), expand=True)
@@ -51,7 +51,7 @@ def update_fp_frame_with_success(fp_frame, user_name="", on_close=None):
     text_label = ctk.CTkLabel(fp_frame, text=success_text, font=ctk.CTkFont(size=18, weight="bold"), text_color="green", wraplength=fp_frame.winfo_width()-20 if fp_frame.winfo_width() > 20 else 280, justify="center")
     text_label.pack(pady=(0, 20), fill="x", padx=10)
     if on_close:
-        fp_frame.after(2000, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close()))
+        fp_frame.after(1000, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close()))
 
 def update_fp_frame_with_failure(fp_frame, message="Không tìm thấy vân tay hoặc không hợp lệ", on_close=None):
     if not fp_frame or not fp_frame.winfo_exists(): return
@@ -60,15 +60,15 @@ def update_fp_frame_with_failure(fp_frame, message="Không tìm thấy vân tay 
         img_path = os.path.join(os.path.dirname(__file__), "images", "fp_error.png")
         fail_img = Image.open(img_path)
     except Exception:
-        fail_img = Image.new("RGB", (150, 150), color="red")
-    ctk_fail = ctk.CTkImage(light_image=fail_img, dark_image=fail_img, size=(150, 150))
+        fail_img = Image.new("RGB",size = (342,200), color="red")
+    ctk_fail = ctk.CTkImage(light_image=fail_img, dark_image=fail_img, size = (342,200))
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_fail, text="")
     icon_label.image = ctk_fail
     icon_label.pack(pady=(20, 10), expand=True)
     text_label = ctk.CTkLabel(fp_frame, text=message, font=ctk.CTkFont(size=18, weight="bold"), text_color="red", wraplength=fp_frame.winfo_width()-20 if fp_frame.winfo_width() > 20 else 280, justify="center")
     text_label.pack(pady=(0, 20), fill="x", padx=10)
     if on_close:
-        fp_frame.after(2000, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close()))
+        fp_frame.after(1000, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close()))
 
 def set_prompt_state(fp_frame, cancel_callback):
     if not fp_frame or not fp_frame.winfo_exists(): return
@@ -77,8 +77,8 @@ def set_prompt_state(fp_frame, cancel_callback):
         img_path = os.path.join(os.path.dirname(__file__), "images", "fp_initial.png")
         img_grey = Image.open(img_path)
     except Exception:
-        img_grey = Image.new("RGB", (200, 200), color="grey")
-    ctk_img_grey = ctk.CTkImage(light_image=img_grey, dark_image=img_grey, size=(200, 200))
+        img_grey = Image.new("RGB", size = (342,200), color="grey")
+    ctk_img_grey = ctk.CTkImage(light_image=img_grey, dark_image=img_grey, size = (342,200))
     
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_img_grey, text="")
     icon_label.image = ctk_img_grey
@@ -87,7 +87,7 @@ def set_prompt_state(fp_frame, cancel_callback):
     text_label = ctk.CTkLabel(fp_frame, text="ĐẶT NGÓN TAY LÊN CẢM BIẾN", font=ctk.CTkFont(size=20, weight="bold"), text_color="#333333")
     text_label.pack(pady=(0, 30))
     
-    cancel_button = ctk.CTkButton(fp_frame, text="HỦY BỎ", command=cancel_callback, width=150, height=45, font=("Segoe UI", 16, "bold"), fg_color="#7F8C8D", hover_color="#95A5A6")
+    cancel_button = ctk.CTkButton(fp_frame, text="HỦY BỎ", command=cancel_callback, width=300, height=45, font=("Segoe UI", 16, "bold"), fg_color="#7F8C8D", hover_color="#95A5A6")
     cancel_button.pack(pady=(0, 30), side="bottom")
 
 def set_scanning_state(fp_frame, cancel_callback):
@@ -97,8 +97,8 @@ def set_scanning_state(fp_frame, cancel_callback):
         img_path = os.path.join(os.path.dirname(__file__), "images", "fp_scanning.png")
         img_blue = Image.open(img_path)
     except Exception:
-        img_blue = Image.new("RGB", (200, 200), color="blue")
-    ctk_img_blue = ctk.CTkImage(light_image=img_blue, dark_image=img_blue, size=(200, 200))
+        img_blue = Image.new("RGB", size = (342,200),color="blue")
+    ctk_img_blue = ctk.CTkImage(light_image=img_blue, dark_image=img_blue, size = (342,200))
     
     icon_label = ctk.CTkLabel(fp_frame, image=ctk_img_blue, text="")
     icon_label.image = ctk_img_blue
@@ -212,17 +212,17 @@ def perform_fingerprint_verification(fp_frame, sensor, cancel_flag, on_success_c
                                     bioid_warn = user_info_from_db['bio_id'] if 'bio_id' in user_info_from_db.keys() else 'Unknown BioID'
                                     print(f"[FP WARN] Fingerprint match for {bioid_warn}, but user is not currently valid (time/date/day).")
                                     if fp_frame.winfo_exists():
-                                        fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "Vân tay đúng,\nnhưng ngoài giờ cho phép.", on_close=lambda: on_failure_callback("Ngoài giờ") if on_failure_callback else None))
+                                        fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "XÁC THỰC VÂN TAY THÀNH CÔNG,\nNHƯNG QUÁ HẠN ĐĂNG KÝ", on_close=lambda: on_failure_callback("Ngoài giờ") if on_failure_callback else None))
                                     return
                             else:
                                 print(f"[FP ERROR] Sensor found match at pos {found_position}, but no user found/active in DB for this position on MAC {device_mac}!")
                                 if fp_frame.winfo_exists():
-                                    fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "Lỗi dữ liệu người dùng.\nVui lòng liên hệ quản trị viên.", on_close=lambda: on_failure_callback("Lỗi DB/không active") if on_failure_callback else None))
+                                    fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "KHÔNG CÓ DỮ LIỆU\nVUI LÒNG LIÊN HỆ BẢO VỆ HOẶC THỬ LẠI SAU", on_close=lambda: on_failure_callback("") if on_failure_callback else None))
                                 return
                         else:
                             print("[FP INFO] No matching fingerprint found by sensor.")
                             if fp_frame.winfo_exists():
-                                fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "Vân tay không khớp.\nVui lòng thử lại.", on_close=lambda: on_failure_callback("Không khớp") if on_failure_callback else None))
+                                fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "VÂN TAY KHÔNG KHỚP\nVUI LÒNG THỬ LẠI SAU", on_close=lambda: on_failure_callback("Không khớp") if on_failure_callback else None))
                             return 
                     else:
                         print("[FP ERROR] Failed to convert fingerprint image on sensor.")
