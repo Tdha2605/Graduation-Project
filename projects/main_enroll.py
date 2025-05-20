@@ -1,6 +1,6 @@
 import os
 script_dir = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_dir) # Đảm bảo working directory là thư mục script
+os.chdir(script_dir) 
 
 import json
 import uuid
@@ -15,9 +15,9 @@ import calendar
 
 import face_enroll
 import fingerprint_enroll
-from mqtt_enroll import MQTTEnrollManager # Giả sử file này tên là mqtt_enroll.py
+from mqtt_enroll import MQTTEnrollManager 
 import database_enroll
-import rfid_enroll # Module mới
+import rfid_enroll 
 
 try:
     from pyfingerprint.pyfingerprint import PyFingerprint
@@ -46,15 +46,15 @@ except Exception as e_pn532_import:
 
 
 DEBUG = True
-BG_COLOR = "#F0F0F0" # Màu nền chính của root
-SCREEN_BG_COLOR = "#E0E0E0" # Màu nền cho các frame của từng step
+BG_COLOR = "#F0F0F0" 
+SCREEN_BG_COLOR = "#E0E0E0" 
 ACCENT_COLOR = "#007AFF"
 BUTTON_FG_TEXT = "#FFFFFF"
 SUCCESS_COLOR = "#34C759"
 WARNING_COLOR = "#FF9500"
 ERROR_COLOR = "#FF3B30"
 
-# --- Font chữ (TĂNG LẠI CHO CÂN ĐỐI HƠN) ---
+
 TITLE_FONT = ("Segoe UI", 26, "bold") # Quay lại kích thước lớn hơn
 STEP_TITLE_FONT = ("Segoe UI", 22, "bold") 
 LABEL_FONT = ("Segoe UI", 16) # Tăng
@@ -64,7 +64,7 @@ SMALL_STATUS_FONT = ("Segoe UI", 13)
 OPTION_MENU_FONT = ("Segoe UI", 15) # Tăng
 OPTION_MENU_DROPDOWN_FONT = ("Segoe UI", 14) # Tăng
 
-# --- Kích thước Widget (TĂNG LẠI) ---
+
 LARGE_BUTTON_WIDTH = 250 # Cho nút Next/Back lớn ở dưới
 MEDIUM_BUTTON_WIDTH = 180 
 LARGE_BUTTON_HEIGHT = 65 # Tăng
@@ -351,8 +351,8 @@ class EnrollmentApp:
             return entry
         self.server_entry_cfg = add_cfg_row(form_frame, "Broker IP/Domain:", "mqtt.example.com", self.mqtt_config.get("broker"))
         self.port_entry_cfg = add_cfg_row(form_frame, "Broker Port:", "1883", self.mqtt_config.get("port"))
-        self.http_port_entry_cfg = add_cfg_row(form_frame, "HTTP Port (API):", "8080", self.mqtt_config.get("http_port", "8080"))
-        self.enroll_room_entry_cfg = add_cfg_row(form_frame, "Vị trí trạm ĐK:", "VD: Lễ Tân", self.mqtt_config.get("enroll_station_room", "EnrollDesk"))
+        self.http_port_entry_cfg = add_cfg_row(form_frame, "HTTP Port (API):", "", self.mqtt_config.get("http_port", "8080"))
+        self.enroll_room_entry_cfg = add_cfg_row(form_frame, "Vị trí trạm ĐK:", "VD: B1-HUST", self.mqtt_config.get("enroll_station_room", "EnrollDesk"))
         
         button_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         button_frame.pack(pady=(PAD_Y_MAIN_CONTAINER + 10, PAD_Y_MAIN_CONTAINER), padx=PAD_X_SECTION, fill="x", side="bottom")
@@ -399,7 +399,7 @@ class EnrollmentApp:
         self.main_frame = ctk.CTkFrame(self.root, fg_color=SCREEN_BG_COLOR, corner_radius=10)
         self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.94, relheight=0.81) 
 
-        ctk.CTkLabel(self.main_frame, text="Bước 1: Thông Tin Cơ Bản", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
+        ctk.CTkLabel(self.main_frame, text="ĐĂNG KÝ THÔNG TIN", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
 
         content_cols_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         content_cols_frame.pack(fill="both", expand=True, padx=PAD_X_SECTION, pady=(0, PAD_Y_WIDGET_VERTICAL + 2))
@@ -418,7 +418,7 @@ class EnrollmentApp:
         self.person_name_entry_s1 = create_labeled_input(left_col, "Họ và Tên (*):", self.current_person_name)
         self.id_number_entry_s1 = create_labeled_input(left_col, "Số CCCD/Mã ID (*):", self.current_id_number)
 
-        ctk.CTkLabel(left_col, text="Phòng truy cập:", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 2, 1))
+        ctk.CTkLabel(left_col, text="Phòng đăng ký", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 2, 1))
         room_opts = sorted(list(self.discovered_rooms_macs.keys())) or ["(Chưa có phòng)"]
         room_val = self.current_room_name_selected if self.current_room_name_selected in room_opts else room_opts[0]
         self.room_name_var_s1 = ctk.StringVar(value=room_val)
@@ -429,7 +429,7 @@ class EnrollmentApp:
         right_col = ctk.CTkFrame(content_cols_frame, fg_color="transparent")
         right_col.grid(row=0, column=1, sticky="new", padx=(PAD_X_WIDGET_HORIZONTAL + 5, 0))
 
-        ctk.CTkLabel(right_col, text="Thời Gian Hiệu Lực:", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 2, 1))
+        ctk.CTkLabel(right_col, text="Thời gian đăng ký", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 2, 1))
         
         from_frame_outer = ctk.CTkFrame(right_col, fg_color="transparent")
         from_frame_outer.pack(fill="x", pady=(0, PAD_Y_WIDGET_VERTICAL)) 
@@ -445,11 +445,8 @@ class EnrollmentApp:
         to_pickers_frame.pack(side="left", fill="x", expand=True)
         self._create_datetime_pickers(to_pickers_frame, "to")
         
-        # LOẠI BỎ CÁC NÚT CHỌN NHANH THỜI GIAN
-        # quick_set_frame = ctk.CTkFrame(right_col, fg_color="transparent")
-        # ... (code tạo nút "7 ngày", "H.nay" đã bị xóa) ...
         
-        ctk.CTkLabel(right_col, text="Lịch hoạt động trong tuần:", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 5, 2)) # Tăng pady trên
+        ctk.CTkLabel(right_col, text="Lịch cố định trong tuần", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 5, 2)) # Tăng pady trên
         
         days_chk_frame = ctk.CTkFrame(right_col, fg_color="transparent")
         days_chk_frame.pack(fill="x", pady=(0, PAD_Y_WIDGET_VERTICAL + 2)) # Tăng pady dưới
@@ -465,11 +462,7 @@ class EnrollmentApp:
                                   checkbox_width=checkbox_box_size, corner_radius=5, border_width=2) # Tăng border_width
             chk.pack(side="left", padx=4, pady=1, expand=True, fill="x") # Tăng padx
 
-        # LOẠI BỎ CÁC NÚT CHỌN NHANH NGÀY TRONG TUẦN
-        # quick_set_days_frame = ctk.CTkFrame(right_col, fg_color="transparent")
-        # ... (code tạo nút "Chọn Tất Cả", "Bỏ Chọn" đã bị xóa) ...
-        
-        # --- Nav Frame ---
+
         if hasattr(self, 'nav_frame') and self.nav_frame and self.nav_frame.winfo_exists():
             self.nav_frame.destroy()
         self.nav_frame = ctk.CTkFrame(self.root, fg_color=BG_COLOR) 
@@ -614,7 +607,7 @@ class EnrollmentApp:
         self.main_frame = ctk.CTkFrame(self.root, fg_color=SCREEN_BG_COLOR, corner_radius=10)
         self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.94, relheight=0.81)
 
-        ctk.CTkLabel(self.main_frame, text="Bước 2: Đăng Ký Sinh Trắc Học", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER-5))
+        ctk.CTkLabel(self.main_frame, text="ĐĂNG KÝ SINH TRẮC HỌC", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER-5))
         info_txt = f"ĐK cho: {self.current_person_name[:20]}{'...' if len(self.current_person_name)>20 else ''} ({self.current_id_number})" # Rút gọn
         ctk.CTkLabel(self.main_frame, text=info_txt, font=LABEL_FONT).pack(pady=(0, PAD_Y_MAIN_CONTAINER-2))
         
@@ -709,7 +702,7 @@ class EnrollmentApp:
         self.main_frame = ctk.CTkFrame(self.root, fg_color=SCREEN_BG_COLOR, corner_radius=10)
         self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.94, relheight=0.81)
 
-        ctk.CTkLabel(self.main_frame, text="Bước 3: Xác Nhận Thông Tin", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
+        ctk.CTkLabel(self.main_frame, text="XÁC NHẬN THÔNG TIN", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
 
         # --- Khung 1: Thông tin cá nhân và Thời gian hiệu lực ---
         personal_validity_outer_frame = ctk.CTkFrame(self.main_frame, fg_color=BG_COLOR, corner_radius=8)
