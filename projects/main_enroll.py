@@ -242,11 +242,11 @@ class EnrollmentApp:
             self.rfid_sensor.SAM_configuration()
             ic, ver, rev, support = self.rfid_sensor.firmware_version
             if DEBUG: print(f"[Enroll INFO] PN532 I2C ver: {ver}.{rev}")
-        except Exception as e: # Bắt lỗi rộng hơn
+        except Exception as e: 
             if DEBUG: print(f"[Enroll ERROR] Init RFID I2C: {e}")
             self.rfid_sensor = None
 
-    def initialize_mqtt(self): # (Giữ nguyên)
+    def initialize_mqtt(self): 
         if self.mqtt_config and not self.mqtt_manager:
             if DEBUG: print("[Enroll DEBUG] Init MQTTManager...")
             self.mqtt_manager = MQTTEnrollManager(self.mqtt_config, self.enroll_mac, self.config_path, debug=DEBUG)
@@ -255,7 +255,7 @@ class EnrollmentApp:
             if not self.mqtt_manager.initialize_connection() and DEBUG:
                  print("[Enroll WARN] Initial MQTT connection failed.")
 
-    def handle_discovered_device_info(self, room_name, mac_address): # (Giữ nguyên)
+    def handle_discovered_device_info(self, room_name, mac_address): 
         if room_name and mac_address:
             self.discovered_rooms_macs[room_name] = mac_address
             active_screen_id = self.screen_history[-1][0] if self.screen_history else None
@@ -357,11 +357,8 @@ class EnrollmentApp:
         button_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         button_frame.pack(pady=(PAD_Y_MAIN_CONTAINER + 10, PAD_Y_MAIN_CONTAINER), padx=PAD_X_SECTION, fill="x", side="bottom")
         ctk.CTkButton(button_frame, text="LƯU & KẾT NỐI", width=MEDIUM_BUTTON_WIDTH+10, height=MEDIUM_BUTTON_HEIGHT, font=BUTTON_FONT, command=self.validate_and_save_mqtt_config, fg_color=ACCENT_COLOR, text_color=BUTTON_FG_TEXT).pack(side="right", padx=PAD_X_WIDGET_HORIZONTAL)
-        # Nút Back ở đây không cần thiết lắm nếu đây là màn hình đầu tiên hoặc sau khi reset
-        # if len(self.screen_history) > 1 : 
-        #      ctk.CTkButton(button_frame, text="TRỞ VỀ", width=MEDIUM_BUTTON_WIDTH, height=MEDIUM_BUTTON_HEIGHT, font=BUTTON_FONT, command=self.go_back, fg_color="#A0A0A0").pack(side="left", padx=PAD_X_WIDGET_HORIZONTAL)
-
-    def validate_and_save_mqtt_config(self): # (Giữ nguyên)
+    
+    def validate_and_save_mqtt_config(self): 
         broker=self.server_entry_cfg.get().strip(); port_s=self.port_entry_cfg.get().strip()
         http_s=self.http_port_entry_cfg.get().strip(); loc=self.enroll_room_entry_cfg.get().strip()
         if not all([broker, port_s, http_s, loc]):
