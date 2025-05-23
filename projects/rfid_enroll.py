@@ -8,8 +8,7 @@ from PIL import Image # Cần PIL để mở và resize ảnh cho CTkImage
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Không cần PN532_Mockup nữa vì bạn có phần cứng
-# from adafruit_pn532.i2c import PN532_I2C # Thư viện thực tế sẽ được dùng trong main.py
+
 
 def clear_frame(frame):
     for widget in frame.winfo_children():
