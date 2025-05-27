@@ -133,7 +133,7 @@ def open_face_recognition(on_recognition=None, on_failure_callback=None, parent_
         print(f"[DEBUG] Recognition loop started at {datetime.now(timezone.utc).astimezone()}")
         while recognition_running and not face_recog_stop_event.is_set():
             current_time = time.time()
-            if current_time - start_time > 20:
+            if current_time - start_time > 7:
                 print("[DEBUG] Timeout: No face recognized within 20 seconds.")
                 if on_failure_callback:
                     try:
