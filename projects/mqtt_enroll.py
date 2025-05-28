@@ -17,7 +17,7 @@ MQTT_HEALTHCHECK_TOPIC = "iot/devices/healthcheck"
 MQTT_DEVICE_INFO_TOPIC_SUBSCRIBE = "iot/devices/device_info"
 
 GMT_PLUS_7 = timezone(timedelta(hours=7))
-ENROLLMENT_STATION_VERSION = "1.0.4" # Version increment
+ENROLLMENT_STATION_VERSION = "20250528" # Version increment
 
 # Simplified reconnect: define a fixed delay for retries after fetching a new token
 RECONNECT_DELAY_AFTER_TOKEN_FETCH = 5 # seconds
@@ -140,15 +140,11 @@ class MQTTEnrollManager:
             if self.debug: print("[Enroll ERROR] HTTP token retrieval FAILED. Will schedule retry.")
             self._schedule_reconnect_attempt() # Schedule another full sequence retry
         
-        # Ensure connecting is False if we didn't enter MQTT connect path or it failed early
-        # MQTT connect callbacks will set it false if they are reached.
         if not self._client or (self._client and not self._client.is_connected() and not self.connected):
             self.connecting = False
 
 
     def retrieve_token_via_http(self) -> bool:
-        # ... (This method remains largely the same as your last correct version)
-        # Ensure it updates self.token, self.username, self.mqtt_config, and calls self._save_config() on success.
         if self.debug: print("[Enroll DEBUG][HTTP Token] Attempting to retrieve token via HTTP...")
         http_port_str = self.mqtt_config.get('http_port', '8080')
         api_server_host = self.mqtt_config.get('broker')
@@ -399,15 +395,14 @@ class MQTTEnrollManager:
     def send_healthcheck(self):
         # ... (send_healthcheck logic remains the same)
         if self.is_actively_connected():
-            device_time_gmt7 = datetime.now(GMT_PLUS_7).isoformat(timespec='seconds')
+            device_time_gmt7 = datetime.now(GMT_PLUS_7).strftime("%Y-%m-%d %H:%M:%S")
             enroll_station_location = self.mqtt_config.get("enroll_station_room", "EnrollmentDesk")
             heartbeat_payload = {
                 "MacAddress": self.mac,
                 "DeviceTime": device_time_gmt7,
                 "Version": ENROLLMENT_STATION_VERSION, 
                 "Room": enroll_station_location,
-                "BioAuthType": {"IsFace": True, "IsFinger": True, "IsIdCard": True, "IsIris": False},
-                "Direction": "N/A"
+                "BioAuthType": {"IsFace": True, "IsFinger": True, "IsIdCard": True, "IsIris": False, "Direction": "IN"},
             }
             self._publish_or_queue(MQTT_HEALTHCHECK_TOPIC, heartbeat_payload, qos=0)
             if self.debug: print(f"[Enroll TRACE] Sent healthcheck: {str(heartbeat_payload)[:200]}")

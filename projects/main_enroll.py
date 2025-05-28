@@ -331,7 +331,7 @@ class EnrollmentApp:
     def create_config_button(self): 
         if hasattr(self, 'config_btn_ref') and self.config_btn_ref and self.config_btn_ref.winfo_exists():
             self.config_btn_ref.lift(); return
-        self.config_btn_ref = ctk.CTkButton(self.root, text="Cấu hình MQTT", 
+        self.config_btn_ref = ctk.CTkButton(self.root, text="Cài đặt", 
                                             command=self.confirm_reconfigure_mqtt, 
                                             width=130, height=35, 
                                             fg_color="#6c757d", hover_color="#5a6268", 
@@ -440,9 +440,9 @@ class EnrollmentApp:
         if not self.current_bio_id: self.generate_new_bio_id()
 
         self.main_frame = ctk.CTkFrame(self.root, fg_color=SCREEN_BG_COLOR, corner_radius=10)
-        self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.94, relheight=0.81) 
+        self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.9, relheight=0.75) 
 
-        ctk.CTkLabel(self.main_frame, text="BƯỚC 1: THÔNG TIN CƠ BẢN", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
+        ctk.CTkLabel(self.main_frame, text="ĐĂNG KÝ THÔNG TIN", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
 
         content_cols_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
         content_cols_frame.pack(fill="both", expand=True, padx=PAD_X_SECTION, pady=(0, PAD_Y_WIDGET_VERTICAL + 2))
@@ -460,7 +460,7 @@ class EnrollmentApp:
         self.person_name_entry_s1 = create_labeled_input(left_col, "Họ và Tên (*):", self.current_person_name, "Nguyễn Văn A")
         self.id_number_entry_s1 = create_labeled_input(left_col, "Số CCCD/Mã ID (*):", self.current_id_number, "00120000xxxx")
 
-        ctk.CTkLabel(left_col, text="Đăng ký cho thiết bị tại Phòng (*):", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 2, 1))
+        ctk.CTkLabel(left_col, text="Phòng đăng ký (*):", font=LABEL_FONT, anchor="w").pack(fill="x", pady=(PAD_Y_WIDGET_VERTICAL + 2, 1))
         room_options_list = sorted(list(self.discovered_rooms_macs.keys())) if self.discovered_rooms_macs else ["(Chưa có phòng)"]
         initial_room_selection = self.current_room_name_selected if self.current_room_name_selected in room_options_list else room_options_list[0]
         self.room_name_var_s1 = ctk.StringVar(value=initial_room_selection)
@@ -492,7 +492,7 @@ class EnrollmentApp:
         
         active_days_checkbox_frame = ctk.CTkFrame(right_col, fg_color="transparent")
         active_days_checkbox_frame.pack(fill="x", pady=(0, PAD_Y_WIDGET_VERTICAL + 2)) 
-        day_names_short = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"]; self.day_vars_s1 = []
+        day_names_short = ["T2", "T3", "T4", "T5", "T6", "T7"]; self.day_vars_s1 = []
         checkbox_label_font = ("Segoe UI", 14) 
         chkbx_h, chkbx_box_sz, chkbx_cr, chkbx_bw = 30, 20, 5, 2
 
@@ -632,9 +632,9 @@ class EnrollmentApp:
     def show_step2_biometric_screen(self):
         self.clear_frames()
         self.main_frame = ctk.CTkFrame(self.root, fg_color=SCREEN_BG_COLOR, corner_radius=10)
-        self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.94, relheight=0.81)
+        self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.9, relheight=0.75)
 
-        ctk.CTkLabel(self.main_frame, text="BƯỚC 2: ĐĂNG KÝ SINH TRẮC HỌC", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER-5))
+        ctk.CTkLabel(self.main_frame, text="ĐĂNG KÝ SINH TRẮC HỌC", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER-5))
         
         person_info_for_display = f"Đang đăng ký cho: {self.current_person_name[:20]}{'...' if len(self.current_person_name)>20 else ''} (ID: {self.current_id_number})"
         ctk.CTkLabel(self.main_frame, text=person_info_for_display, font=LABEL_FONT).pack(pady=(0, PAD_Y_MAIN_CONTAINER-2))
@@ -751,24 +751,25 @@ class EnrollmentApp:
     def show_step3_confirmation_screen(self):
         self.clear_frames()
         self.main_frame = ctk.CTkFrame(self.root, fg_color=SCREEN_BG_COLOR, corner_radius=10)
-        self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.94, relheight=0.81)
+        self.main_frame.place(relx=0.5, rely=0.47, anchor="center", relwidth=0.9, relheight=0.75)
 
-        ctk.CTkLabel(self.main_frame, text="BƯỚC 3: XÁC NHẬN THÔNG TIN", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
+        ctk.CTkLabel(self.main_frame, text="XÁC NHẬN THÔNG TIN", font=TITLE_FONT, text_color=ACCENT_COLOR).pack(pady=(PAD_Y_MAIN_CONTAINER, PAD_Y_MAIN_CONTAINER - 5))
         
         personal_validity_outer_frame = ctk.CTkFrame(self.main_frame, fg_color=BG_COLOR, corner_radius=8)
         personal_validity_outer_frame.pack(fill="x", padx=PAD_X_SECTION, pady=(PAD_Y_SECTION, PAD_Y_SECTION + 3))
         ctk.CTkLabel(personal_validity_outer_frame, text="Thông Tin Chung & Thời Gian Hiệu Lực", font=STEP_TITLE_FONT, text_color=ACCENT_COLOR, anchor="w").pack(fill="x", padx=12, pady=(8, 5))
         
-        personal_validity_content_frame = ctk.CTkFrame(personal_validity_outer_frame, fg_color="transparent") # Corrected variable name
+        personal_validity_content_frame = ctk.CTkFrame(personal_validity_outer_frame, fg_color="transparent")
         personal_validity_content_frame.pack(fill="x", padx=12, pady=(0, 8)) 
-        personal_validity_content_frame.columnconfigure((0,2), weight=1); personal_validity_content_frame.columnconfigure((1,3), weight=2)
+        personal_validity_content_frame.columnconfigure((0,2), weight=1)
+        personal_validity_content_frame.columnconfigure((1,3), weight=2)
 
         current_display_row_idx = [0] 
-        def add_compact_info_row(parent_widget, current_row_list_ref, col_label_idx, col_value_idx, label_text_val, value_text_val, value_font_override=None, value_wraplength=200):
+        def add_compact_info_row(parent_widget, current_row_list_ref, col_label_idx, col_value_idx, label_text_val, value_text_val, value_font_override=None, value_wraplength=200, value_columnspan=1): # Added value_columnspan
             effective_value_font = value_font_override if value_font_override else INPUT_FONT
             ctk.CTkLabel(parent_widget, text=f"{label_text_val}:", font=LABEL_FONT, anchor="e").grid(row=current_row_list_ref[0], column=col_label_idx, sticky="e", padx=(0,3), pady=2)
             ctk.CTkLabel(parent_widget, text=str(value_text_val) if value_text_val is not None else "N/A", 
-                         font=effective_value_font, anchor="w", wraplength=value_wraplength).grid(row=current_row_list_ref[0], column=col_value_idx, sticky="w", pady=2)
+                         font=effective_value_font, anchor="w", wraplength=value_wraplength).grid(row=current_row_list_ref[0], column=col_value_idx, sticky="w", pady=2, columnspan=value_columnspan) # Applied columnspan
         
         add_compact_info_row(personal_validity_content_frame, current_display_row_idx, 0, 1, "Họ Tên", self.current_person_name)
         add_compact_info_row(personal_validity_content_frame, current_display_row_idx, 2, 3, "Phòng ĐK", self.current_room_name_selected or "N/A")
@@ -786,7 +787,8 @@ class EnrollmentApp:
 
         day_names_map = ["Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7", "Chủ Nhật"]
         active_days_display_str = ", ".join([day_names_map[i] for i, is_active in enumerate(self.active_day_mask_list) if is_active]) or "Không ngày nào hoạt động"
-        add_compact_info_row(personal_validity_content_frame, current_display_row_idx, 0, 1, "Lịch hoạt động", active_days_display_str, value_wraplength=220)
+        add_compact_info_row(personal_validity_content_frame, current_display_row_idx, 0, 1, "Lịch hoạt động", active_days_display_str, value_wraplength=320, value_columnspan=3) # Changed wraplength and added columnspan
+        current_display_row_idx[0] += 1 # Ensure next row index is incremented if more rows were added later
 
         bio_outer_frame = ctk.CTkFrame(self.main_frame, fg_color=BG_COLOR, corner_radius=8)
         bio_outer_frame.pack(fill="both", expand=True, padx=PAD_X_SECTION, pady=(PAD_Y_SECTION, PAD_Y_SECTION))
@@ -819,7 +821,8 @@ class EnrollmentApp:
                 pil_image_face = Image.open(io.BytesIO(img_bytes))
                 preview_dimensions = (70,70)
                 pil_image_face.thumbnail(preview_dimensions, Image.Resampling.LANCZOS)
-                final_pil_preview = Image.new("RGBA", preview_dimensions, (0,0,0,0))
+                # Create a new image with transparent background to center the thumbnail
+                final_pil_preview = Image.new("RGBA", preview_dimensions, (0,0,0,0)) 
                 paste_x_coord = (preview_dimensions[0] - pil_image_face.width) // 2
                 paste_y_coord = (preview_dimensions[1] - pil_image_face.height) // 2
                 final_pil_preview.paste(pil_image_face, (paste_x_coord, paste_y_coord))
@@ -832,11 +835,10 @@ class EnrollmentApp:
         create_bio_col_display(bio_content_cols, 2, "Thẻ RFID", bool(self.current_rfid_uid_str), rfid_uid_display_text=rfid_uid_text)
         
         if hasattr(self, 'nav_frame') and self.nav_frame and self.nav_frame.winfo_exists(): self.nav_frame.destroy()
-        self.nav_frame = ctk.CTkFrame(self.root, fg_color=BG_COLOR)
+        self.nav_frame = ctk.CTkFrame(self.root, fg_color=BG_COLOR) # Assuming BG_COLOR is defined
         self.nav_frame.place(relx=0.5, rely=1.0, anchor="s", relwidth=1.0, relheight=0.12)
         ctk.CTkButton(self.nav_frame, text="CHỈNH SỬA", font=BUTTON_FONT, width=LARGE_BUTTON_WIDTH, height=LARGE_BUTTON_HEIGHT, command=self._action_goto_step1_from_step3, image=self.back_icon, compound="left", corner_radius=8, fg_color="#A0A0A0").pack(side="left", pady=(5,8), padx=PAD_X_MAIN_CONTAINER)
         ctk.CTkButton(self.nav_frame, text="GỬI ĐĂNG KÝ", font=BUTTON_FONT, width=LARGE_BUTTON_WIDTH + 20, height=LARGE_BUTTON_HEIGHT, command=self.prepare_and_send_data, fg_color=SUCCESS_COLOR, text_color=BUTTON_FG_TEXT, image=self.send_icon_large, compound="right", corner_radius=8).pack(side="right", pady=(5,8), padx=PAD_X_MAIN_CONTAINER)
-
     def _action_goto_step1_from_step3(self): 
         if len(self.screen_history) > 0: self.screen_history.pop()
         if len(self.screen_history) > 0: self.screen_history.pop()
