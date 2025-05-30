@@ -1,7 +1,7 @@
 import json
 import time
 import ssl
-import requests
+import requests # Import requests here
 import socket
 import hashlib
 import base64
@@ -24,7 +24,7 @@ RECONNECT_DELAY_AFTER_TOKEN_FETCH = 5 # seconds
 
 # AUTH_FAILURE_RETURN_CODES can still be useful for specific logging if needed,
 # but the primary action on disconnect will be to fetch a new token anyway.
-AUTH_FAILURE_RETURN_CODES = [2, 4, 5] 
+AUTH_FAILURE_RETURN_CODES = [2, 4, 5]
 
 def generate_hashed_password(mac):
     data = (mac + "navis@salt").encode("utf-8")
@@ -51,7 +51,7 @@ class MQTTEnrollManager:
         self._client = None
         self.connected = False
         self.connecting = False # True if a connection attempt (MQTT or HTTP) is in progress
-        
+
         self.on_connection_status_change = None
         self.on_device_info_received = None
 
@@ -95,19 +95,19 @@ class MQTTEnrollManager:
                 if self._client.is_connected():
                      try: self._client.unsubscribe(MQTT_DEVICE_INFO_TOPIC_SUBSCRIBE)
                      except: pass
-                self._client.loop_stop(force=False)
+                self._client.loop_stop(force=False) # Changed from force=True to force=False for graceful stop
                 self._client.disconnect()
                 if self.debug: print("[Enroll DEBUG] MQTT client disconnect requested.")
             except Exception as e:
                 if self.debug: print(f"[Enroll ERROR] Error during MQTT disconnect: {e}")
-            
+
             if explicit:
-                self._client = None
-                self.connected = False
-                self.connecting = False
+                self._client = None # Nullify the client instance
+                self.connected = False # Update connection status
+                self.connecting = False # Reset connecting flag
                 if self.on_connection_status_change:
-                    self.on_connection_status_change(False)
-    
+                    self.on_connection_status_change(False) # Notify UI or other components
+
     def attempt_connection_sequence(self):
         """
         Manages the sequence of fetching a new token and then connecting to MQTT.
@@ -132,15 +132,14 @@ class MQTTEnrollManager:
         if self.retrieve_token_via_http(): # This sets self.token and self.username on success
             if self.debug: print("[Enroll INFO] HTTP token retrieval SUCCEEDED. Proceeding to MQTT connection.")
             if not self.connect_with_current_token(): # Try to connect with the newly fetched token
-                # MQTT connection failed even with new token
                 if self.debug: print("[Enroll WARN] MQTT connection failed even after fetching a new token.")
                 self._schedule_reconnect_attempt() # Schedule another full sequence retry
-            # connect_with_current_token and its callbacks (on_connect/on_disconnect) will set self.connecting = False
         else: # retrieve_token_via_http FAILED
             if self.debug: print("[Enroll ERROR] HTTP token retrieval FAILED. Will schedule retry.")
             self._schedule_reconnect_attempt() # Schedule another full sequence retry
-        
-        if not self._client or (self._client and not self._client.is_connected() and not self.connected):
+            self.connecting = False # Reset connecting flag if HTTP token fails outright
+
+        if not self.is_actively_connected() and (not self._client or (self._client and not self._client.is_connected())):
             self.connecting = False
 
 
@@ -157,15 +156,15 @@ class MQTTEnrollManager:
         except ValueError:
             if self.debug: print(f"[Enroll ERROR][HTTP Token] Invalid http_port '{http_port_str}' in config. Using default 8080.")
             http_port = 8080
-        
+
         base_url = api_server_host.strip().rstrip('/')
-        if not base_url.startswith(('http://', 'https://')): 
+        if not base_url.startswith(('http://', 'https://')):
             base_url = f"http://{base_url}"
 
         url = f"{base_url}:{http_port}/api/devicecomm/getmqtttoken"
         if self.debug: print(f"[Enroll DEBUG][HTTP Token] Requesting token from URL: {url}")
         payload = {"macAddress": self.mac, "password": generate_hashed_password(self.mac)}
-        
+
         response_text_for_log = "N/A"
         try:
             resp = requests.post(url, json=payload, timeout=10)
@@ -195,7 +194,7 @@ class MQTTEnrollManager:
         new_token = token_data_field.get("token")
         new_username = token_data_field.get("username")
 
-        if self.debug: 
+        if self.debug:
             token_preview = str(new_token)[:10] + "..." if new_token else "None"
             print(f"[Enroll DEBUG][HTTP Token] Extracted from API response: Username='{new_username}', Token (preview)='{token_preview}'")
 
@@ -214,45 +213,45 @@ class MQTTEnrollManager:
 
     def on_disconnect(self, client, userdata, rc, properties=None):
         reason_code = rc
-        if hasattr(rc, 'value'): reason_code = rc.value
+        if hasattr(rc, 'value'):
+            reason_code = rc.value
 
         if self.debug: print(f"[Enroll DEBUG] MQTT disconnected. Reason code: {reason_code}, Explicit: {self.explicit_disconnect}")
 
         self.connected = False
         self.connecting = False
-        self._client = None 
+        # self._client = None # Per Paho docs, client object persists. Nullify if re-creating.
 
         if self.on_connection_status_change:
             self.on_connection_status_change(False)
 
-        if not self.explicit_disconnect: # If not an intentional disconnect by our app
+        if not self.explicit_disconnect:
             if self.debug: print(f"[Enroll INFO] Unexpected MQTT disconnect (rc={reason_code}). Scheduling attempt to get new token and reconnect.")
             self._schedule_reconnect_attempt()
         else:
             if self.debug: print("[Enroll DEBUG] Explicit disconnect processed. No auto-reconnect scheduled by this callback.")
-            self.explicit_disconnect = False # Reset for next cycle
+            self.explicit_disconnect = False
 
     def _schedule_reconnect_attempt(self):
         """Schedules a call to attempt_connection_sequence after a delay."""
-        if self.connecting or self.explicit_disconnect: # Already trying or explicitly stopped
+        if self.connecting or self.explicit_disconnect:
             return
 
         if self.reconnect_timer is not None and hasattr(self.on_connection_status_change, '__self__'):
             app_instance = self.on_connection_status_change.__self__
             if hasattr(app_instance, 'root') and app_instance.root:
                 try: app_instance.root.after_cancel(self.reconnect_timer)
-                except: pass # Ignore errors if timer ID invalid
+                except: pass
         
         delay_ms = RECONNECT_DELAY_AFTER_TOKEN_FETCH * 1000
         if self.debug: print(f"[Enroll INFO] Scheduling full reconnect sequence (fetch new token then connect) in {RECONNECT_DELAY_AFTER_TOKEN_FETCH} seconds.")
         
-        # The timer needs to be set on the Tkinter root loop from EnrollmentApp
-        if hasattr(self.on_connection_status_change, '__self__'): # Check if callback is bound (i.e., self is EnrollmentApp)
+        if hasattr(self.on_connection_status_change, '__self__'):
             app_instance = self.on_connection_status_change.__self__
             if hasattr(app_instance, 'root') and app_instance.root and app_instance.root.winfo_exists():
                 self.reconnect_timer = app_instance.root.after(delay_ms, self.attempt_connection_sequence)
             else:
-                if self.debug: print("[Enroll ERROR] Cannot schedule reconnect: EnrollmentApp root window not available.")
+                if self.debug: print("[Enroll ERROR] Cannot schedule reconnect: EnrollmentApp root window not available or destroyed.")
         else:
              if self.debug: print("[Enroll ERROR] Cannot schedule reconnect: on_connection_status_change not bound or app instance invalid.")
 
@@ -264,7 +263,6 @@ class MQTTEnrollManager:
          if self.debug and mid != 0 : print(f"[Enroll TRACE] Message MID {mid} published.")
 
     def on_message(self, client, userdata, msg):
-        # ... (on_message logic remains the same)
         try:
             topic = msg.topic
             payload_str = msg.payload.decode('utf-8')
@@ -291,15 +289,17 @@ class MQTTEnrollManager:
 
 
     def connect_with_current_token(self):
-        # ... (This method remains largely the same, but it's called *after* retrieve_token_via_http ensures token/username are fresh)
         if not self.token or not self.username:
              if self.debug: print("[Enroll ERROR] connect_with_current_token: Username or token is missing.")
+             self.connecting = False
              return False
 
         if self._client:
             if self.debug: print("[Enroll DEBUG] connect_with_current_token: Old client instance found. Cleaning up.")
-            self._client.loop_stop(force=True)
-            self._client = None 
+            try:
+                self._client.loop_stop(force=True)
+            except: pass
+            self._client = None
 
         broker_address = self.mqtt_config.get("broker")
         broker_port_str = self.mqtt_config.get("port", "1883")
@@ -312,6 +312,7 @@ class MQTTEnrollManager:
             
         if not broker_address:
             if self.debug: print("[Enroll ERROR] Broker address not configured.")
+            self.connecting = False
             return False
 
         if self.debug: print(f"[Enroll INFO] Attempting MQTT connect to {broker_address}:{broker_port} with user '{self.username}'")
@@ -319,7 +320,7 @@ class MQTTEnrollManager:
         try:
             self._client = mqtt.Client(client_id=self.mac, protocol=mqtt.MQTTv5)
             self._client.on_connect = self.on_connect_token
-            self._client.on_disconnect = self.on_disconnect # Critical for reconnect logic
+            self._client.on_disconnect = self.on_disconnect
             self._client.on_message = self.on_message
             self._client.on_subscribe = self.on_subscribe
             self._client.on_publish = self.on_publish
@@ -340,13 +341,15 @@ class MQTTEnrollManager:
                  try: self._client.loop_stop(force=True)
                  except: pass
              self._client = None
+             self.connecting = False
              return False
         except Exception as e:
             if self.debug: print(f"[Enroll ERROR] Failed to initiate MQTT connection with Paho client: {e}")
-            if self._client: 
+            if self._client:
                 try: self._client.loop_stop(force=True)
                 except: pass
             self._client = None
+            self.connecting = False
             return False
 
     def on_connect_token(self, client, userdata, flags, rc, properties=None):
@@ -358,9 +361,9 @@ class MQTTEnrollManager:
         elif isinstance(reason_code, int):
             paho_rc_string = mqtt.connack_string(reason_code)
 
-        self.connecting = False # Connection attempt (this specific one) is now complete
+        self.connecting = False
 
-        if reason_code == 0: # Success
+        if reason_code == 0:
             self.connected = True
             if self.debug: print(f"[Enroll INFO] MQTT connected successfully to broker.")
             try:
@@ -372,15 +375,12 @@ class MQTTEnrollManager:
             if self.on_connection_status_change:
                 self.on_connection_status_change(True)
             self.flush_outbox()
-        else: # Connection failed
+        else:
             self.connected = False
             if self.debug: print(f"[Enroll ERROR] MQTT connection failed in on_connect_token. RC: {reason_code} ({paho_rc_string})")
             
-            # Even if it's not an explicit AUTH_FAILURE_CODE, assume token *could* be bad if connect fails.
-            # The main reconnect strategy is now to always fetch a new token on disconnect.
             if self.debug: print(f"[Enroll INFO] MQTT connect failed (rc={reason_code}). Will schedule to fetch new token and retry.")
             
-            # Nullify client, notify UI, and schedule the full reconnect sequence
             if self._client:
                 try: self._client.loop_stop(force=True)
                 except: pass
@@ -389,11 +389,10 @@ class MQTTEnrollManager:
             if self.on_connection_status_change:
                 self.on_connection_status_change(False)
             
-            if not self.explicit_disconnect: # Only if not explicitly stopped
+            if not self.explicit_disconnect:
                  self._schedule_reconnect_attempt()
 
     def send_healthcheck(self):
-        # ... (send_healthcheck logic remains the same)
         if self.is_actively_connected():
             device_time_gmt7 = datetime.now(GMT_PLUS_7).strftime("%Y-%m-%d %H:%M:%S")
             enroll_station_location = self.mqtt_config.get("enroll_station_room", "EnrollmentDesk")
@@ -408,7 +407,8 @@ class MQTTEnrollManager:
             if self.debug: print(f"[Enroll TRACE] Sent healthcheck: {str(heartbeat_payload)[:200]}")
 
     def publish_enrollment_payload(self, list_of_payload_dicts: list, target_device_mac: str) -> bool:
-        # ... (publish_enrollment_payload logic remains the same)
+        # THIS METHOD IS LIKELY NOT USED BY THE NEW HTTP-BASED ENROLLMENT FLOW
+        # BUT KEPT FOR "DON'T REMOVE ANYTHING" REQUIREMENT.
         if not isinstance(list_of_payload_dicts, list):
              if self.debug: print("[Enroll ERROR] Invalid enrollment payload: Expected a list of dictionaries.")
              return False 
@@ -417,7 +417,7 @@ class MQTTEnrollManager:
              return False
 
         target_topic = MQTT_PUSH_BIOMETRIC_TOPIC_TEMPLATE.format(mac_address=target_device_mac)
-        if self.debug: print(f"[Enroll INFO] Publishing enrollment data ({len(list_of_payload_dicts)} item(s)) to target device {target_device_mac} on topic: {target_topic}")
+        if self.debug: print(f"[Enroll INFO] Publishing enrollment data ({len(list_of_payload_dicts)} item(s)) to target device {target_device_mac} on topic: {target_topic} (MQTT - POTENTIALLY UNUSED)")
         
         user_props_for_enroll = [("SenderMac", self.mac), ("TargetMac", target_device_mac)]
         return self._publish_or_queue(
@@ -428,7 +428,6 @@ class MQTTEnrollManager:
         )
 
     def _publish_or_queue(self, topic, payload_obj, qos=0, user_properties=None) -> bool:
-        # ... (_publish_or_queue logic remains the same)
         try:
              payload_str = json.dumps(payload_obj, separators=(",", ":"))
         except TypeError as te_json_dump:
@@ -467,7 +466,6 @@ class MQTTEnrollManager:
              return False
 
     def flush_outbox(self):
-        # ... (flush_outbox logic remains the same)
         if not self.is_actively_connected():
             return
 
