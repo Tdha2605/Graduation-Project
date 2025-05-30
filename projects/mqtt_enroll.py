@@ -17,7 +17,7 @@ MQTT_HEALTHCHECK_TOPIC = "iot/devices/healthcheck"
 MQTT_DEVICE_INFO_TOPIC_SUBSCRIBE = "iot/devices/device_info"
 
 GMT_PLUS_7 = timezone(timedelta(hours=7))
-ENROLLMENT_STATION_VERSION = "20250528" # Version increment
+ENROLLMENT_STATION_VERSION = "20250601" # Version increment
 
 # Simplified reconnect: define a fixed delay for retries after fetching a new token
 RECONNECT_DELAY_AFTER_TOKEN_FETCH = 5 # seconds
