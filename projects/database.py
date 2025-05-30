@@ -82,7 +82,7 @@ def process_biometric_push(data, mac_address, finger_position_from_sensor=None):
     """
     try:
         bio_id = data.get('bioId')
-        id_number = data.get('id_number')
+        id_number = data.get('idNumber')
         person_name = data.get('personName')
         bio_datas = data.get('bioDatas', []) # Đây là list các mẫu sinh trắc học
         from_date_str = data.get('fromDate')

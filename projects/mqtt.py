@@ -278,6 +278,7 @@ class MQTTManager:
 
                         cmd_type = command_item.get("cmdType")
                         bio_id = command_item.get("bioId")
+                        id_number = command_item.get("idNumber")
                         processed_ok = False
                         finger_position_for_db = None
 
@@ -454,7 +455,7 @@ class MQTTManager:
                                 # Nếu server gửi naive datetime, ta phải có quy ước nó là UTC
                                 # Hoặc đây là lỗi định dạng từ server.
                                 if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) CmdTime '{cmd_time_str}' is naive. Assuming it was intended as UTC for timeout check.")
-                                cmd_time_dt_utc_from_server = cmd_time_dt_utc_from_server.replace(tzinfo=GMT_PLUS_7)
+                                cmd_time_dt_utc_from_server = cmd_time_dt_utc_from_server.replace(tzinfo=timezone.utc())
                             elif cmd_time_dt_utc_from_server.tzinfo != timezone.utc:
                                 # Nếu có múi giờ khác, chuyển về UTC để so sánh
                                 cmd_time_dt_utc_from_server = cmd_time_dt_utc_from_server.astimezone(GMT_PLUS_7)
@@ -758,12 +759,17 @@ class MQTTManager:
             print(f"[MQTT WARN] (MAC: {self.mac}) Cannot send Device Sync Request: MQTT not actively connected.")
 
 
-    def send_biometric_ack(self, bio_id):
-        # ... (Giữ nguyên hàm này như phiên bản trước) ...
-        payload_dict = {"bioId": bio_id, "macAddress": self.mac, "status": "RECEIVED"} 
-        if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) Sending Biometric ACK for bioId {bio_id}: {payload_dict}")
+    def send_biometric_ack(self):
+        payload_dict = {
+           "MacAddress": self.mac,
+           "DoorId": ,
+           "BioId": ,
+           "DeviceTime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+           "CmdType": "NEW_BIO"
+        }
+        if self.debug:
+           print(f"[MQTT DEBUG] (MAC: {self.mac}) Sending Biometric ACK: {payload_dict}")
         self._publish_or_queue(MQTT_BIO_ACK_TOPIC, payload_dict, qos=1, user_properties=[("MacAddress", self.mac)])
-
 
     def send_sos_alert(self):
         # ... (Giữ nguyên hàm này như phiên bản trước, đã có đổi format thời gian) ...

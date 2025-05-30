@@ -810,7 +810,7 @@ class App:
                 if key in ["IsFace", "IsFinger", "IsIdCard", "IsIris", "FingerTime", "IdCardTime", "IrisTime", "Direction"]:
                     if self.auth_config["BioAuthType"].get(key) != value:
                         self.auth_config["BioAuthType"][key] = value; updated = True
-                elif self.debug: print(f"[MAIN WARN] Received unknown key '{key}' in BioAuthType from server. Ignoring.")
+                elif DEBUG: print(f"[MAIN WARN] Received unknown key '{key}' in BioAuthType from server. Ignoring.")
         if updated:
             if DEBUG: print(f"[MAIN INFO] Device auth config updated: {self.auth_config}")
             self.save_device_auth_config()
