@@ -318,7 +318,8 @@ class MQTTManager:
                             if self.debug: print(f"[MQTT INFO] (MAC: {self.mac}) Processing {cmd_type} for bioId: {bio_id}")
                             
                             finger_op_success, face_op_success, idcard_op_success = True, True, True
-
+                            finger_position_for_db = None 
+                            
                             for bio_data in command_item.get('bioDatas', []):
                                 bio_data_type = bio_data.get("BioType", "").upper()
                                 template_b64 = bio_data.get("Template")
@@ -371,6 +372,7 @@ class MQTTManager:
                                          if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Unknown BioType: {bio_data_type} for {bio_id}")
                             
                             if finger_op_success and face_op_success and idcard_op_success:
+                                
                                 processed_ok = database.process_biometric_push(command_item, self.mac, finger_position_from_sensor=finger_position_for_db)
                             else:
                                 if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Skipping DB update for {bio_id} due to bio op failure (finger/face/idcard check).")
@@ -419,7 +421,6 @@ class MQTTManager:
                     traceback.print_exc()
 
             elif topic == self.command_topic:
-                # ... (Giữ nguyên logic xử lý command_topic như phiên bản trước) ...
                 if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) Received command on '{topic}': {payload_str[:150]}...")
                 try:
                     command = json.loads(payload_str)
@@ -427,40 +428,81 @@ class MQTTManager:
                         if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Invalid command: Expected object.")
                         return
 
-                    mac_address_cmd = command.get("MacAddress") 
+                    mac_address_cmd = command.get("MacAddress")
                     cmd_id = command.get("CmdId")
-                    cmd_type_cmd = command.get("CmdType") 
+                    cmd_type_cmd = command.get("CmdType")
                     cmd_time_str = command.get("CmdTime")
-                    cmd_timeout = command.get("CmdTimeout", 30) 
+                    cmd_timeout = command.get("CmdTimeout", 30) # Mặc định 30 giây nếu không có
 
                     if mac_address_cmd != self.mac:
                         if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) MAC mismatch in command. Expected {self.mac}, got {mac_address_cmd}.")
                         return
 
-                    if cmd_time_str:
+                    if cmd_time_str: # Chỉ kiểm tra timeout nếu CmdTime được cung cấp
                         try:
-                            cmd_time_dt_utc = datetime.fromisoformat(cmd_time_str.replace("Z", "+00:00"))
-                            if cmd_timeout > 0 and (datetime.now(timezone.utc) - cmd_time_dt_utc).total_seconds() > cmd_timeout:
-                                if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Command timeout for ID {cmd_id} (Type: {cmd_type_cmd}).")
-                                return 
-                        except ValueError:
-                            if self.debug: print(f"[MQTT ERROR] (MAC: {self.mac}) Invalid CmdTime format '{cmd_time_str}' for ID {cmd_id}.")
-                            return 
-                    
+                            # Parse CmdTime từ server, giả định là ISO 8601 UTC
+                            parsed_cmd_time_from_server_str = cmd_time_str
+                            if parsed_cmd_time_from_server_str.endswith('Z'):
+                                cmd_time_dt_utc_from_server = datetime.fromisoformat(parsed_cmd_time_from_server_str.replace('Z', '+07:00'))
+                            else:
+                                # Nếu không có 'Z', thử parse trực tiếp, hy vọng có offset múi giờ
+                                # Hoặc nếu không có offset, fromisoformat sẽ coi là naive, cần xử lý
+                                cmd_time_dt_utc_from_server = datetime.fromisoformat(parsed_cmd_time_from_server_str)
+
+                            # Đảm bảo cmd_time_dt_from_server là aware và UTC
+                            if cmd_time_dt_utc_from_server.tzinfo is None:
+                                # Nếu server gửi naive datetime, ta phải có quy ước nó là UTC
+                                # Hoặc đây là lỗi định dạng từ server.
+                                if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) CmdTime '{cmd_time_str}' is naive. Assuming it was intended as UTC for timeout check.")
+                                cmd_time_dt_utc_from_server = cmd_time_dt_utc_from_server.replace(tzinfo=GMT_PLUS_7)
+                            elif cmd_time_dt_utc_from_server.tzinfo != timezone.utc:
+                                # Nếu có múi giờ khác, chuyển về UTC để so sánh
+                                cmd_time_dt_utc_from_server = cmd_time_dt_utc_from_server.astimezone(GMT_PLUS_7)
+                            
+                            current_utc_time_client = datetime.now(GMT_PLUS_7)
+                            time_elapsed_seconds = (current_utc_time_client - cmd_time_dt_utc_from_server).total_seconds()
+
+                            if self.debug: # Log chi tiết để debug
+                                print(f"--- CMD TIMEOUT CHECK (ID: {cmd_id}, Type: {cmd_type_cmd}) ---")
+                                print(f"  Raw CmdTime from server: {cmd_time_str}")
+                                print(f"  Client Current Time (UTC): {current_utc_time_client.isoformat()}")
+                                print(f"  Parsed CmdTime from server (UTC): {cmd_time_dt_utc_from_server.isoformat()}")
+                                print(f"  Time Elapsed (seconds): {time_elapsed_seconds:.3f}")
+                                print(f"  CmdTimeout setting (seconds): {cmd_timeout}")
+                                is_timed_out = cmd_timeout > 0 and time_elapsed_seconds > cmd_timeout
+                                print(f"  Is Timeout? (elapsed > timeout_limit): {is_timed_out}")
+                                print(f"--------------------------------------")
+
+                            if cmd_timeout > 0 and time_elapsed_seconds > cmd_timeout:
+                                if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Command timeout for ID {cmd_id}. Elapsed: {time_elapsed_seconds:.2f}s > Timeout: {cmd_timeout}s.")
+                                return # Bỏ qua lệnh đã timeout
+                            if time_elapsed_seconds < -5 : # Ngưỡng nhỏ để tránh lỗi do đồng bộ đồng hồ lệch nhẹ
+                                if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Command ID {cmd_id} seems to be from the future (client time {current_utc_time_client.isoformat()} is significantly before command time {cmd_time_dt_utc_from_server.isoformat()}). Processing anyway unless timeout applies later.")
+                                # Vẫn có thể xử lý nếu không bị timeout, nhưng cần cảnh báo về khả năng lệch đồng hồ.
+                                # Hoặc bạn có thể return ở đây nếu muốn chặt chẽ hơn với lệnh "từ tương lai".
+
+                        except ValueError as ve_time:
+                            if self.debug: print(f"[MQTT ERROR] (MAC: {self.mac}) Invalid CmdTime format or value '{cmd_time_str}' for ID {cmd_id}. Error: {ve_time}")
+                            return # Bỏ qua lệnh có thời gian không hợp lệ
+                        except Exception as e_time_check: # Bắt các lỗi không mong muốn khác khi xử lý thời gian
+                             if self.debug: print(f"[MQTT ERROR] (MAC: {self.mac}) Unexpected error checking command time for ID {cmd_id}: {e_time_check}")
+                             return
+
+
                     action_performed = False
                     if cmd_type_cmd == "REMOTE_OPEN":
                         if self.debug: print(f"[MQTT INFO] (MAC: {self.mac}) Processing REMOTE_OPEN ID {cmd_id}.")
-                        if self.door: 
-                            self.door.open_door() 
+                        if self.door:
+                            self.door.open_door()
                             action_performed = True
-                        else: 
+                        else:
                             if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Door handler N/A for REMOTE_OPEN.")
                     elif cmd_type_cmd == "REMOTE_CLOSE":
                         if self.debug: print(f"[MQTT INFO] (MAC: {self.mac}) Processing REMOTE_CLOSE ID {cmd_id}.")
-                        if self.door: 
+                        if self.door:
                             self.door.close_door()
                             action_performed = True
-                        else: 
+                        else:
                             if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Door handler N/A for REMOTE_CLOSE.")
                     else:
                         if self.debug: print(f"[MQTT WARN] (MAC: {self.mac}) Unknown command type: {cmd_type_cmd}.")
@@ -468,8 +510,8 @@ class MQTTManager:
                     if cmd_id and action_performed:
                         response_payload = {"MacAddress": self.mac, "CmdId": cmd_id, "DeviceTime": datetime.now(GMT_PLUS_7).strftime(DATETIME_FORMAT_STR)}
                         if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) Sending command response: {response_payload}")
-                        self._publish_or_queue(MQTT_COMMAND_RESPONSE_TOPIC, response_payload, qos=1) 
-                
+                        self._publish_or_queue(MQTT_COMMAND_RESPONSE_TOPIC, response_payload, qos=1)
+
                 except json.JSONDecodeError:
                     if self.debug: print(f"[MQTT ERROR] (MAC: {self.mac}) JSON decode error in command processing.")
                 except KeyError as e_key:
@@ -478,7 +520,7 @@ class MQTTManager:
                     if self.debug: print(f"[MQTT ERROR] (MAC: {self.mac}) Unhandled error processing command: {e_cmd_proc}")
                     import traceback
                     traceback.print_exc()
-
+                    
             elif topic == self.push_config_topic: # <<< XỬ LÝ TOPIC CONFIG MỚI
                 if self.debug: print(f"[MQTT DEBUG] (MAC: {self.mac}) Received device config on '{topic}': {payload_str[:300]}...")
                 try:

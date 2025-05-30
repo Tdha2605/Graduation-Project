@@ -141,8 +141,8 @@ def process_biometric_push(data, mac_address, finger_position_from_sensor=None):
                 list_of_bio_types_in_push.append("IDCARD")
                 idcard_uid_to_save = entry_template_b64.strip().upper() # UID dạng HEX string
                 # Không có ảnh cho IDCARD
-                finger_image_to_save = None # Đảm bảo không ghi đè nếu trước đó là FINGER
-                finger_position_to_save = None # IDCARD không có finger position
+                # finger_image_to_save = None # Đảm bảo không ghi đè nếu trước đó là FINGER
+                # finger_position_to_save = None # IDCARD không có finger position
         
         # Xác định bio_type chính để lưu (có thể là một list được join bằng comma)
         main_bio_type_to_store = ",".join(sorted(list(set(list_of_bio_types_in_push))))
@@ -377,7 +377,7 @@ def is_user_access_valid_now(bio_id, mac_address): # Giữ nguyên hàm này, n�
         if user_record['valid_to_date'] and current_date_str > user_record['valid_to_date']: return False
         
         mask = user_record['active_days_mask']
-        if not mask or len(mask) != 7 or mask[current_day_index] != '1': return False
+        if not mask or len(mask) != 6 or mask[current_day_index] != '1': return False
         
         if user_record['valid_from_time'] and current_time_str < user_record['valid_from_time']: return False
         if user_record['valid_to_time'] and current_time_str >= user_record['valid_to_time']: return False # >= vì to_time là giới hạn cuối
@@ -418,7 +418,7 @@ def get_active_embeddings(mac_address): # Chủ yếu cho Face Recognition
                     if row['valid_from_date'] and current_date_str < row['valid_from_date']: continue
                     if row['valid_to_date'] and current_date_str > row['valid_to_date']: continue
                     mask = row['active_days_mask']
-                    if not mask or len(mask) != 7 or mask[current_day_index] != '1': continue
+                    if not mask or len(mask) != 6 or mask[current_day_index] != '1': continue
                     if row['valid_from_time'] and current_time_str < row['valid_from_time']: continue
                     if row['valid_to_time'] and current_time_str >= row['valid_to_time']: continue
 
@@ -503,13 +503,13 @@ def get_finger_position_by_bio_id_and_mac(bio_id, mac_address): # Cập nhật �
          print(f"[DB ERROR] Retrieving finger position for bio_id {bio_id}, MAC {mac_address}: {e}")
          return None
 
-def find_next_available_finger_position(max_position=199): # Giảm max_position nếu sensor có ít hơn
+def find_next_available_finger_position(max_position=299): # Giảm max_position nếu sensor có ít hơn
     try:
         with sqlite3.connect(DB_FILE) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT finger_position FROM embeddings WHERE finger_position IS NOT NULL ORDER BY finger_position ASC")
             used_positions = {row[0] for row in cursor.fetchall()}
-            for i in range(1, max_position + 1): # Sensor thường bắt đầu từ 0 hoặc 1
+            for i in range(0, max_position + 1): # Sensor thường bắt đầu từ 0 hoặc 1
                 if i not in used_positions:
                     # print(f"[DB DEBUG] Found next available finger position: {i}")
                     return i
