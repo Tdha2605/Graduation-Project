@@ -85,7 +85,9 @@ def process_biometric_push(data, mac_address, finger_position_from_sensor=None):
 
         face_templates_b64 = data.get("FaceTemps", [])
         face_image_b64 = data.get("FaceImg")
+        
         finger_templates_b64 = data.get("FingerTemps", [])
+        finger_image_b64 = data.get("FingerImg")
         idcard_uids_from_iris = data.get("IrisTemps", [])
 
         face_template_to_save = None
@@ -115,6 +117,7 @@ def process_biometric_push(data, mac_address, finger_position_from_sensor=None):
                 try:
                     padding = '=' * (-len(first_finger_template_b64) % 4)
                     finger_template_to_save = base64.b64decode(first_finger_template_b64 + padding)
+                    finger_image_to_save = finger_image_b64
                 except Exception as e:
                     print(f"[DB ERROR] Processing FINGER data for BioId {bio_id_str}: {e}")
 
@@ -271,7 +274,7 @@ def get_user_by_bio_type_and_template(bio_type, template_data, mac_address):
             return None
     elif bio_type.upper() == "IDCARD":
         query_field = "idcard_uid"
-        template_data_for_query = template_data.upper()
+        template_data_for_query = template_data
     else:
         return None
 

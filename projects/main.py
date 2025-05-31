@@ -1342,7 +1342,13 @@ class App:
             if self.current_rfid_scan_display_frame and self.current_rfid_scan_display_frame.winfo_exists(): rfid.update_rfid_auth_ui(self.current_rfid_scan_display_frame, "Thẻ đã quét.\nVui lòng đợi giây lát...", image_path="rfid_scan.png", color="orange")
             return
         self.last_rfid_auth_time = current_time
-        user_info = database.get_user_by_bio_type_and_template("IDCARD", uid_hex_from_card, self.mac)
+        try:
+          uid_base64 = base64.b64encode(uid_hex_from_card.encode("utf-8")).decode("utf-8")
+        except ValueError:
+           if DEBUG: print(f"[AUTH ERROR] UID '{uid_hex_from_card}' không hợp lệ. Không thể chuyển sang base64.")
+           return
+        print({uid_base64})
+        user_info = database.get_user_by_bio_type_and_template("IDCARD", uid_base64, self.mac)
         is_valid_now = user_info and database.is_user_access_valid_now(get_from_row(user_info, 'bio_id'), self.mac)
 
         if self.multi_factor_auth_state["active"]:
@@ -1370,17 +1376,17 @@ class App:
                 if not is_valid_now:
                     if DEBUG: print(f"[MAIN WARN] Access DENIED for {person_name} (UID: {uid_hex_from_card}). Outside valid schedule.")
                     self.show_authentication_result_screen(success=False, message_main="TRUY CẬP BỊ TỪ CHỐI", message_sub=f"{person_name}\nNGOÀI GIỜ HOẶC HẾT HẠN TRUY CẬP", user_image_ctk=get_ctk_image_from_db(actual_bio_id, size=(180,180)))
-                    if self.mqtt_manager and self.mqtt_manager.is_actively_connected(): self.mqtt_manager.send_recognition_event(bio_id=actual_bio_id, id_number=id_number, auth_method="IDCARD", auth_data=uid_hex_from_card, status="DENIED_SCHEDULE", face_image_b64=face_image_b64_db, finger_image_b64=finger_image_b64_db)
+                    if self.mqtt_manager and self.mqtt_manager.is_actively_connected(): self.mqtt_manager.send_recognition_event(bio_id=actual_bio_id, id_number=id_number, auth_method="IDCARD", auth_data=uid_base64, status="DENIED_SCHEDULE", face_image_b64=face_image_b64_db, finger_image_b64=finger_image_b64_db)
                 else:
                     if DEBUG: print(f"[MAIN SUCCESS] RFID Access GRANTED for {person_name} (BioID: {actual_bio_id})")
                     #self.trigger_door_open()
-                    if self.mqtt_manager and self.mqtt_manager.is_actively_connected(): self.mqtt_manager.send_recognition_event(bio_id=actual_bio_id, id_number=id_number, auth_method="IDCARD", auth_data=uid_hex_from_card, status="SUCCESS", face_image_b64=face_image_b64_db, finger_image_b64=finger_image_b64_db)
+                    if self.mqtt_manager and self.mqtt_manager.is_actively_connected(): self.mqtt_manager.send_recognition_event(bio_id=actual_bio_id, id_number=id_number, auth_method="IDCARD", auth_data=uid_base64, status="SUCCESS", face_image_b64=face_image_b64_db, finger_image_b64=finger_image_b64_db)
                     self.show_authentication_result_screen(success=True, message_main=f"XIN CHÀO, {person_name.upper()}!", message_sub="XÁC THỰC BẰNG THẺ TỪ THÀNH CÔNG", user_image_ctk=get_ctk_image_from_db(actual_bio_id, size=(180,180)))
             else:
                 if DEBUG: print(f"[MAIN WARN] RFID UID {uid_hex_from_card} not found in DB or not active for this device.")
                 self.show_authentication_result_screen(success=False, message_main="THẺ KHÔNG HỢP LỆ", message_sub=f"THẺ CHƯA ĐƯỢC ĐĂNG KÝ", user_image_ctk=load_image("images/rfid_unknown.png", (180,180)))
-                if self.mqtt_manager and self.mqtt_manager.is_actively_connected(): self.mqtt_manager.send_recognition_event(bio_id=None, id_number=None, auth_method="IDCARD", auth_data=uid_hex_from_card, status="NOT_FOUND")
-            self.root.after(3000, self.return_to_main_menu_screen)
+                if self.mqtt_manager and self.mqtt_manager.is_actively_connected(): self.mqtt_manager.send_recognition_event(bio_id=None, id_number=None, auth_method="IDCARD", auth_data=uid_base64, status="NOT_FOUND")
+            self.root.after(1500, self.return_to_main_menu_screen)
 
     def handle_rfid_auth_failure(self, reason=""):
         if not self.rfid_scan_active and not self.multi_factor_auth_state["active"]:
