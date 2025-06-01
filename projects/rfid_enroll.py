@@ -147,7 +147,7 @@ def enroll_rfid_card(parent, sensor_pn532, on_success_callback=None, on_failure_
                 if cancel_flag["cancel"]:
                     print("[RFID Enroll DEBUG] RFID scan thread cancelled.")
                     break
-                time.sleep(0.05) # Nghỉ ngắn giữa các lần thử
+                time.sleep(0.05) 
 
             if cancel_flag["cancel"] and not uid_found_hex: # Nếu hủy mà chưa tìm thấy thẻ
                  # Callback on_cancel_callback đã được gọi từ nút Hủy
