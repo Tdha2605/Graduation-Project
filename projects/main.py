@@ -819,11 +819,10 @@ class App:
         else:
             if DEBUG: print("[MAIN INFO] Received device auth config, but no changes were made to current settings.")
             return True
-    def return_to_main_menu_screen_after_config(self): #  
+    def return_to_main_menu_screen_after_config(self): 
         # Kiểm tra trạng thái kết nối MQTT trước khi quay về
         if self.mqtt_manager and self.mqtt_manager.is_actively_connected():
              if DEBUG: print("[MAIN INFO] MQTT connected successfully after config. Returning to main menu.")
-             # Không cần messagebox ở đây nếu thành công, người dùng sẽ thấy trạng thái kết nối trên màn hình chính
         else:
              if DEBUG: print("[MAIN WARN] MQTT NOT connected after config. Returning to main menu anyway, will show warning.")
              messagebox.showwarning("Cảnh Báo Kết Nối", 
@@ -832,9 +831,7 @@ class App:
                                    "Vui lòng kiểm tra lại cấu hình nếu vấn đề kéo dài, hoặc xem trạng thái kết nối ở góc màn hình.", 
                                    parent=self.root) # Parent là root window
         
-        # Luôn quay về màn hình chính, bất kể kết nối thành công hay không
-        # MQTTManager sẽ tiếp tục cố gắng kết nối lại trong nền nếu thất bại
-        self.return_to_main_menu_screen() # Đảm bảo hàm này tồn tại
+        self.return_to_main_menu_screen() 
     def initialize_mqtt(self):
         if self.mqtt_config and not self.mqtt_manager:
             if DEBUG: print("[MAIN DEBUG] Initializing MQTT Manager with config:", self.mqtt_config)
@@ -851,27 +848,24 @@ class App:
             if not self.mqtt_manager.is_actively_connected() and not self.mqtt_manager.connecting:
                 if DEBUG: print("[MAIN DEBUG] MQTT Manager exists but is not connected/connecting. Calling connect_and_register on it.")
                 self.mqtt_manager.connect_and_register()
-    def update_connection_status_display(self, is_connected): #  
-        # Kiểm tra xem connection_status_label đã được tạo và còn tồn tại không
+                
+    def update_connection_status_display(self, is_connected): 
         if not self.connection_status_label or not self.connection_status_label.winfo_exists():
             if DEBUG: print("[MAIN WARN] connection_status_label not available for update.")
             return
         
-        # Chọn ảnh và màu chữ dựa trên trạng thái kết nối
-        # Đảm bảo self.connected_image và self.disconnected_image đã được load trong __init__
+       
         image_to_show = self.connected_image if is_connected else self.disconnected_image
-        text_color = "#2ECC71" if is_connected else "#E74C3C" # Xanh lá cây cho connected, đỏ cho disconnected
+        text_color = "#2ECC71" if is_connected else "#E74C3C" 
         status_text = "" if is_connected else ""
         
-        # Tạo một hàm con để thực hiện cập nhật UI trên luồng chính của Tkinter
+      
         def _update_ui():
             if self.connection_status_label and self.connection_status_label.winfo_exists():
                  self.connection_status_label.configure(image=image_to_show, 
                                                         text=status_text, 
                                                         text_color=text_color)
         
-        # Sử dụng self.root.after(0, ...) để đảm bảo cập nhật UI được thực hiện trên luồng chính
-        # Điều này quan trọng vì hàm này có thể được gọi từ luồng của Paho MQTT
         if self.root and self.root.winfo_exists():
             self.root.after(0, _update_ui)
         elif DEBUG:
@@ -882,20 +876,16 @@ class App:
         
         face.stop_face_recognition() 
 
-        self.rfid_scan_active = False # Đặt lại cờ cho RFID
-        # Hủy frame pop-up của RFID nếu còn tồn tại
+        self.rfid_scan_active = False 
         if self.current_rfid_scan_display_frame and self.current_rfid_scan_display_frame.winfo_exists():
             self.current_rfid_scan_display_frame.destroy()
             self.current_rfid_scan_display_frame = None
             
-        # Reset lại lịch sử màn hình, chỉ giữ lại main_menu là màn hình gốc
-        # và đảm bảo tham số args cho show_main_menu_screen là tuple rỗng nếu không có args
         self.screen_history = [("main_menu", self.show_main_menu_screen, ())] 
         
-        # Dọn dẹp các frame UI không cần thiết và vẽ lại main menu
-        self.clear_frames(clear_face_ui=True, clear_rfid_ui=True) # Dọn dẹp UI của face và RFID
-        self.root.update_idletasks() # Đảm bảo UI được cập nhật trước khi vẽ mới
-        self.show_main_menu_screen() # Gọi hàm để hiển thị lại main menu
+        self.clear_frames(clear_face_ui=True, clear_rfid_ui=True) 
+        self.root.update_idletasks() 
+        self.show_main_menu_screen() 
 
     def show_main_menu_screen(self):
         self.reset_multi_factor_state()
@@ -918,7 +908,6 @@ class App:
         self.update_main_menu_button_states()
 
     def update_main_menu_button_states(self):
-        """Cập nhật trạng thái (enabled/disabled) và hình ảnh của các nút trên main menu."""
         if not hasattr(self, 'frame_main_menu') or not self.frame_main_menu or not self.frame_main_menu.winfo_exists():
             return 
 
@@ -927,7 +916,6 @@ class App:
         is_finger_enabled = bio_auth_type.get("IsFinger", False)
         is_idcard_enabled = bio_auth_type.get("IsIdCard", False)
 
-        # Chọn ảnh và màu chữ dựa trên trạng thái enabled
         face_image_to_use = self.face_icon_img if is_face_enabled else self.face_icon_disable_img
         face_text_color = BUTTON_FG if is_face_enabled else BUTTON_DISABLED_FG
         
@@ -937,18 +925,14 @@ class App:
         rfid_image_to_use = self.rfid_icon_img if is_idcard_enabled else self.rfid_icon_disable_img
         rfid_text_color = BUTTON_FG if is_idcard_enabled else BUTTON_DISABLED_FG
 
-        # Cập nhật nút Khuôn mặt
         if hasattr(self, 'face_button') and self.face_button.winfo_exists():
-            # Đảm bảo self.face_icon_img và self.face_icon_disable_img không None
-            # Nếu một trong hai là None (do lỗi tải ảnh), nút có thể không hiển thị ảnh đúng
-            actual_face_image = face_image_to_use if face_image_to_use else self.face_icon_img # Fallback nếu ảnh disable bị lỗi
+            actual_face_image = face_image_to_use if face_image_to_use else self.face_icon_img 
             self.face_button.configure(
                 state="normal" if is_face_enabled else "disabled",
                 text_color=face_text_color,
                 image=actual_face_image
             )
 
-        # Cập nhật nút Vân tay
         if hasattr(self, 'fingerprint_button') and self.fingerprint_button.winfo_exists():
             actual_fingerprint_image = fingerprint_image_to_use if fingerprint_image_to_use else self.fingerprint_icon_img
             self.fingerprint_button.configure(
@@ -957,7 +941,6 @@ class App:
                 image=actual_fingerprint_image
             )
 
-        # Cập nhật nút Thẻ từ
         if hasattr(self, 'rfid_button') and self.rfid_button.winfo_exists():
             actual_rfid_image = rfid_image_to_use if rfid_image_to_use else self.rfid_icon_img
             self.rfid_button.configure(

@@ -68,12 +68,12 @@ def initialize_database():
 
 def process_biometric_push(data, mac_address, finger_position_from_sensor=None):
     try:
-        bio_id_int = data.get('BioId') # This is an integer
+        bio_id_int = data.get('BioId') 
         if bio_id_int is None:
             print("[DB WARN] Skipping push item: Missing 'BioId'.")
             return False
         
-        bio_id_str = str(bio_id_int) # Convert to string for DB operations if column is TEXT
+        bio_id_str = str(bio_id_int) 
 
         id_number = data.get('IdNumber')
         person_name = data.get('PersonName')
@@ -297,6 +297,7 @@ def get_user_by_bio_type_and_template(bio_type, template_data, mac_address):
         print(f"[DB ERROR] Getting user by {bio_type} template {template_data_for_query}: {e}")
         return None
 
+#Kiểm tra người dùng có hợp lệ hay khôgn
 def is_user_access_valid_now(bio_id_int, mac_address):
     user_record = get_user_info_by_bio_id(bio_id_int)
     if not user_record:
@@ -446,6 +447,7 @@ def get_finger_position_by_bio_id_and_mac(bio_id_int, mac_address):
          print(f"[DB ERROR] Retrieving finger position for bio_id {bio_id_str}, MAC {mac_address}: {e}")
          return None
 
+#Tìm vị trí vân tay tiếp theo có thể lưuu
 def find_next_available_finger_position(max_position=299):
     try:
         with sqlite3.connect(DB_FILE) as conn:

@@ -120,6 +120,7 @@ class MQTTManager:
         else:
             self.connecting = False
             return False
+    # Lấy token từ HTTP Server để tạo kết nối tới broker MQTT
     def retrieve_token_via_http(self) -> bool:
         server_address_conf = self.mqtt_config.get('server')
         http_port_conf = self.mqtt_config.get('http_port')
@@ -150,6 +151,7 @@ class MQTTManager:
         self.device_info_sent_this_session = False
         if self.on_token_received: self.on_token_received(new_username, new_token)
         return True
+    # Callback khi thiết bị mất kết nối tới Server
     def on_disconnect(self, client, userdata, rc, properties=None):
         reason_code = rc.value if hasattr(rc, 'value') else rc
         self.connected = False
@@ -161,19 +163,23 @@ class MQTTManager:
         else:
             self.explicit_disconnect_flag = False
             self.connecting = False
+    # Debug khi Subcribe
     def on_subscribe(self, client, userdata, mid, granted_qos, properties=None):
         if self.debug: print(f"[MQTT DEBUG] Subscribed: mid={mid}, QoS/RCs={granted_qos}")
+    # Debug khi publish
     def on_publish(self, client, userdata, mid, *args, **kwargs):
         rc_value = mid.rc if hasattr(mid, 'rc') else (args[0] if len(args) > 0 and isinstance(args[0], int) else mqtt.MQTT_ERR_SUCCESS)
         mid_value = mid.mid if hasattr(mid, 'mid') else mid
         if rc_value != mqtt.MQTT_ERR_SUCCESS and self.debug:
              print(f"[MQTT WARN] Publish failed for MID {mid_value}, RC: {rc_value}")
+    # Callback xử lý command nhận từ Server
     def on_message(self, client, userdata, msg):
         try:
             topic = msg.topic
             payload_str = msg.payload.decode('utf-8')
             if self.debug: print(f"[MQTT DEBUG] Received on '{topic}': {payload_str[:500]}{'...' if len(payload_str)>500 else ''}")
-
+            
+            # Topic nhận dữ liệu sinh trắc
             if topic == self.push_biometric_topic:
                 if not self.is_actively_connected(): return
                 try:
@@ -186,7 +192,8 @@ class MQTTManager:
 
                     processed_ok = False
                     finger_position_for_db = None
-
+                    
+                    # Xóa toàn bộ dữ liệu
                     if cmd_type == "SYNC_ALL":
                         sensor_cleared = True
                         if self.fingerprint_sensor and PyFingerprint is not None:
@@ -202,9 +209,9 @@ class MQTTManager:
                         if bio_id is not None and (command_data.get("FaceTemps") or command_data.get("FingerTemps") or command_data.get("IrisTemps")):
                             cmd_type = "PUSH_NEW_BIO"
                         elif processed_ok:
-                             # self.send_biometric_ack(door_id_for_ack, bio_id_int_for_ack_if_needed, "SYNC_ALL") # ACK for SYNC_ALL if needed
+                             # self.send_biometric_ack(door_id_for_ack, bio_id_int_for_ack_if_needed, "SYNC_ALL") 
                              return
-
+                    # Thêm mới hoặc update dữ liệu sinh trắc đã có
                     if cmd_type in ["PUSH_NEW_BIO", "PUSH_UPDATE_BIO"]:
                         if bio_id is None: return
                         
@@ -273,7 +280,7 @@ class MQTTManager:
                 except Exception as e_bio_proc:
                     if self.debug: print(f"[MQTT ERROR] Error processing biometric push: {e_bio_proc}")
                     import traceback; traceback.print_exc()
-
+            # Topic cho nhận lệnh đóng mở cửa
             elif topic == self.command_topic:
                 try:
                     command = json.loads(payload_str)
@@ -311,7 +318,7 @@ class MQTTManager:
                 except Exception as e_cmd_proc:
                     if self.debug: print(f"[MQTT ERROR] Error processing command: {e_cmd_proc}")
                     import traceback; traceback.print_exc()
-            
+            # Cập nhật mức độ xác thực các loại sinh trắc học
             elif topic == self.push_config_topic:
                 try:
                     new_config = json.loads(payload_str)
@@ -395,12 +402,12 @@ class MQTTManager:
             bio_auth = {"IsFace": True, "IsFinger": bool(self.fingerprint_sensor and PyFingerprint),
                         "IsIdCard": bool(self.rfid_sensor), "IsIris": False, "Direction": "IN"}
             payload = {"MacAddress": self.mac, "DeviceTime": datetime.now(GMT_PLUS_7).strftime(DATETIME_FORMAT_STR),
-                       "Version": VERSION, "Room": self.mqtt_config.get("room", "N/A"), "BioAuthType": bio_auth}
+                       "Version": VERSION, "BioAuthType": bio_auth}
             self._publish_or_queue(MQTT_HEALTHCHECK_TOPIC, payload, qos=0)
 
     def send_recognition_event(self, bio_id, id_number, auth_method, auth_data, status, face_image_b64=None, finger_image_b64=None, iris_image_b64 = '', abnormal = False, direction = "IN"):
         person_name, id_num_send = "Unknown", id_number
-        if bio_id is not None: # bio_id is int
+        if bio_id is not None: 
             user_details = database.get_user_info_by_bio_id(bio_id)
             if user_details:
                 person_name = user_details['person_name'] or person_name
@@ -422,14 +429,15 @@ class MQTTManager:
     def send_biometric_ack(self, door_id, bio_id_int, original_cmd_type):
         payload = {"MacAddress": self.mac, "DoorId": door_id, "BioId": bio_id_int,
                    "DeviceTime": datetime.now(GMT_PLUS_7).strftime(DATETIME_FORMAT_STR),
-                   "CmdType": "NEW_BIO"} # As per requested ACK format
+                   "CmdType": "NEW_BIO"} 
         if self.debug: print(f"[MQTT DEBUG] Sending Biometric ACK: {payload} for original CmdType {original_cmd_type}")
         self._publish_or_queue(MQTT_BIO_ACK_TOPIC, payload, qos=1, user_properties=[("MacAddress", self.mac)])
 
     def send_sos_alert(self):
         payload = {"MacAddress": self.mac, "DeviceTime": datetime.now(GMT_PLUS_7).strftime(DATETIME_FORMAT_STR), "AlertType": "SOS"}
         self._publish_or_queue(MQTT_SOS_ALERT_TOPIC, payload, qos=1, user_properties=[("MacAddress", self.mac)])
-
+        
+    #Gửi nếu thành công, không thì lưu vào database
     def _publish_or_queue(self, topic, payload_dict, qos=0, user_properties=None):
         try:
             payload_str = json.dumps(payload_dict, separators=(",", ":"), ensure_ascii=False)

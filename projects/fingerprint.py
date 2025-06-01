@@ -16,6 +16,7 @@ def clear_frame(frame):
     for widget in frame.winfo_children():
         widget.destroy()
 
+#Giao diện khi k thể kết nối tớ module AS608
 def update_fp_frame_with_error(fp_frame, message="Lỗi phần cứng", on_close=None):
     if not fp_frame or not fp_frame.winfo_exists(): return
     clear_frame(fp_frame)
@@ -33,6 +34,7 @@ def update_fp_frame_with_error(fp_frame, message="Lỗi phần cứng", on_close
     if on_close:
         fp_frame.after(2500, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close()))
 
+# Giao diện xác thực vân tay thành công
 def update_fp_frame_with_success(fp_frame, user_name="", on_close=None):
     if not fp_frame or not fp_frame.winfo_exists(): return
     clear_frame(fp_frame)
@@ -53,6 +55,7 @@ def update_fp_frame_with_success(fp_frame, user_name="", on_close=None):
     if on_close:
         fp_frame.after(1000, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close()))
 
+# Giao diện xác thực fail
 def update_fp_frame_with_failure(fp_frame, message="Không tìm thấy vân tay hoặc không hợp lệ", on_close=None):
     if not fp_frame or not fp_frame.winfo_exists(): return
     clear_frame(fp_frame)
@@ -70,6 +73,7 @@ def update_fp_frame_with_failure(fp_frame, message="Không tìm thấy vân tay 
     if on_close:
         fp_frame.after(1000, lambda: (fp_frame.destroy() if fp_frame.winfo_exists() else None, on_close()))
 
+# Hướng dẫn người dùng
 def set_prompt_state(fp_frame, cancel_callback):
     if not fp_frame or not fp_frame.winfo_exists(): return
     clear_frame(fp_frame)
@@ -106,11 +110,11 @@ def set_scanning_state(fp_frame, cancel_callback):
     
     text_label = ctk.CTkLabel(fp_frame, text="ĐANG QUÉT VÀ TÌM KIẾM...", font=ctk.CTkFont(size=18, weight="bold"), text_color="#2980B9")
     text_label.pack(pady=(0, 30))
-    if cancel_callback: # Chỉ hiển thị nút hủy nếu có callback được cung cấp
+    if cancel_callback: 
         cancel_button = ctk.CTkButton(fp_frame, text="Hủy", command=cancel_callback, width=120, height=40)
         cancel_button.pack(pady=10, side="bottom")
 
-
+# Chekc thông tin người dùng trong hệ thống
 def is_currently_valid(user_info_row, device_mac):
     if not user_info_row: return False
     try:
@@ -123,6 +127,7 @@ def is_currently_valid(user_info_row, device_mac):
         print(f"[FP ERROR] Exception during validity check redirect: {e}")
         return False
 
+#Tạo luồng xác thực vân tay tách biệt với giao diện
 def open_fingerprint_prompt(parent, sensor, on_success_callback=None, on_failure_callback=None, device_mac_address=None):
     if device_mac_address is None:
         print("[FP ERROR] device_mac_address is required for open_fingerprint_prompt.")
@@ -148,9 +153,10 @@ def open_fingerprint_prompt(parent, sensor, on_success_callback=None, on_failure
                      args=(fp_frame, sensor, cancel_flag, on_success_callback, on_failure_callback, device_mac_address),
                      daemon=True).start()
 
+# Cập nhật từng bước, giao diện trong quá trình xác thực vân tay
 def perform_fingerprint_verification(fp_frame, sensor, cancel_flag, on_success_callback, on_failure_callback, device_mac):
     start_time = time.time()
-    timeout_seconds = 15
+    timeout_seconds = 10
     
     from pyfingerprint.pyfingerprint import FINGERPRINT_CHARBUFFER1 
 
@@ -217,7 +223,7 @@ def perform_fingerprint_verification(fp_frame, sensor, cancel_flag, on_success_c
                             else:
                                 print(f"[FP ERROR] Sensor found match at pos {found_position}, but no user found/active in DB for this position on MAC {device_mac}!")
                                 if fp_frame.winfo_exists():
-                                    fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "KHÔNG CÓ DỮ LIỆU\nVUI LÒNG LIÊN HỆ BẢO VỆ HOẶC THỬ LẠI SAU", on_close=lambda: on_failure_callback("") if on_failure_callback else None))
+                                    fp_frame.after(0, lambda: update_fp_frame_with_failure(fp_frame, "KHÔNG CÓ DỮ LIỆU\nVUI LÒNG LIÊN HỆ LỄ TÂN HOẶC THỬ LẠI SAU", on_close=lambda: on_failure_callback("") if on_failure_callback else None))
                                 return
                         else:
                             print("[FP INFO] No matching fingerprint found by sensor.")

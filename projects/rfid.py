@@ -1,4 +1,3 @@
-# rfid.py (cho thiết bị xác thực)
 import customtkinter as ctk
 from customtkinter import CTkImage
 import threading
@@ -14,12 +13,6 @@ def clear_frame_content(frame):
         widget.destroy()
 
 def update_rfid_auth_ui(frame, message, image_path=None, color="white", duration=None, on_close_callback=None):
-    """
-    Cập nhật UI cho frame hiển thị trạng thái quét RFID.
-    frame: CTkFrame được cung cấp từ main.py để hiển thị.
-    duration: Thời gian hiển thị thông báo trước khi gọi on_close_callback (ms).
-    on_close_callback: Hàm được gọi sau khi hết duration.
-    """
     if not frame or not frame.winfo_exists():
         if on_close_callback and duration:
             print("[RFID Auth WARN] Calling on_close_callback directly due to missing frame.")
@@ -110,7 +103,7 @@ def start_rfid_authentication_scan(parent_ui_element, sensor_pn532, on_success_c
                 return
 
             if uid_bytes is not None:
-                if len(uid_bytes) == 4: # Chỉ chấp nhận UID 4 byte
+                if len(uid_bytes) == 4: 
                     uid_found_hex = uid_bytes.hex().upper()
                     print(f"[RFID Auth INFO] Card UID Scanned: {uid_found_hex}")
                     parent_ui_element.after(0, lambda uid=uid_found_hex: _handle_ui_close_and_callback(on_success_callback, uid))
@@ -119,16 +112,16 @@ def start_rfid_authentication_scan(parent_ui_element, sensor_pn532, on_success_c
                     print(f"[RFID Auth WARN] Ignored non 4-byte UID: {uid_bytes.hex()}")
                     if rfid_scan_frame.winfo_exists():
                         parent_ui_element.after(0, lambda: update_rfid_auth_ui(rfid_scan_frame, "Thẻ không hợp lệ.\n(Cần UID 4 byte)", image_path="rfid_scan.png", color="orange"))
-                        time.sleep(2) # Chờ người dùng đọc
-                        if rfid_scan_frame.winfo_exists(): # Kiểm tra lại frame
+                        time.sleep(2) 
+                        if rfid_scan_frame.winfo_exists(): 
                             parent_ui_element.after(0, lambda: update_rfid_auth_ui(rfid_scan_frame, "Đưa thẻ RFID\nvào để xác thực...", image_path="rfid_scan.png", color="white"))
             else:
                 scan_attempts += 1
-            time.sleep(0.02) # Nghỉ ngắn để giảm CPU usage
+            time.sleep(0.02) 
 
         if not uid_found_hex: 
             print("[RFID Auth WARN] Max scan attempts reached without finding a card.")
             parent_ui_element.after(0, lambda: update_rfid_auth_ui(rfid_scan_frame, "Không phát hiện thẻ.\nVui lòng thử lại.", image_path="rfid_error.png", color="orange", duration=3000, on_close_callback=lambda: _handle_ui_close_and_callback(on_failure_callback, "Timeout or no card")))
 
     threading.Thread(target=rfid_scan_thread_func, daemon=True).start()
-    return rfid_scan_frame # Trả về frame để main.py có thể quản lý (ví dụ: hủy khi cần)
+    return rfid_scan_frame 
